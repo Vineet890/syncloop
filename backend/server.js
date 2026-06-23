@@ -38,6 +38,16 @@ app.post('/api/meetings', async (req, res) => {
         res.status(500).json({ error: "Failed to create meeting" });
     }
 });
+
+app.get('/api/meetings', async (req, res) => {
+    try {
+        const meetings = await Meeting.find().sort({ createdAt: -1 });
+        res.status(200).json(meetings);
+    } catch (error) {
+        console.log("Error fetching meetings:", error);
+        res.status(500).json({ error: "Failed to fetch meetings" });
+    }
+});
 app.listen(PORT, () => {
     console.log(`Server is running live on http://localhost:${PORT}`);
 });
