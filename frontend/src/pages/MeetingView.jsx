@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import VideoRecorder from '../components/VideoRecorder';
 import { io } from 'socket.io-client';
 
+// Connect to our new Backend WebSocket server!
 const socket = io('http://localhost:5000');
 
 function MeetingView() {
@@ -11,20 +12,37 @@ function MeetingView() {
   const [replies, setReplies] = useState([]);
 
   useEffect(() => {
-    fetch(`http://localhost:5000/api/meetings/${id}`)
+    // Grab the VIP Wristband from the browser's vault
+    const token = localStorage.getItem('token');
+
+    // 1. Fetch the specific meeting details
+    fetch(`http://localhost:5000/api/meetings/${id}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
       .then((response) => response.json())
       .then((data) => setMeeting(data));
 
-    fetch(`http://localhost:5000/api/replies/${id}`)
+    // 2. Fetch all the video replies for this meeting
+    fetch(`http://localhost:5000/api/replies/${id}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
       .then((response) => response.json())
-      .then((data) => setReplies(data));
+      .then((data) => {
+          if (Array.isArray(data)) {
+              setReplies(data);
+          }
+      });
       
+    // --- WEBSOCKET REAL-TIME MAGIC ---
+    // Tell the backend Waiter to put us in the specific room for this Meeting ID
     socket.emit('joinMeeting', id);
 
+    // Keep an ear open for any 'newReply' blasts from the server
     socket.on('newReply', (newVideoReply) => {
       setReplies((previousReplies) => [newVideoReply, ...previousReplies]);
     });
 
+    // Cleanup: Stop listening when we navigate away from the page
     return () => {
       socket.off('newReply');
     };
@@ -58,6 +76,7 @@ function MeetingView() {
                   style={{ width: '100%', borderRadius: '8px' }}
                 />
                 
+                {/* Paint the Groq AI Summary if it exists! */}
                 {reply.transcript && (
                   <div style={{ marginTop: '1rem', padding: '1rem', backgroundColor: 'rgba(192, 132, 252, 0.1)', borderRadius: '8px', borderLeft: '3px solid #c084fc' }}>
                     <h4 style={{ margin: '0 0 0.5rem 0', color: '#c084fc' }}>✨ AI Summary</h4>

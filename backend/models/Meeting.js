@@ -9,8 +9,14 @@ const meetingSchema = new mongoose.Schema({
         type: String, 
         required: true 
     },
+    workspaceId: { 
+        type: mongoose.Schema.Types.ObjectId, 
+        ref: 'Workspace',
+        required: true 
+    },
     status: { 
         type: String, 
+        enum: ['Open', 'Closed'], 
         default: 'Open' 
     },
     createdAt: { 

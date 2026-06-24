@@ -5,8 +5,13 @@ require('dotenv').config();
 const multer = require('multer');
 const streamifier = require('streamifier');
 const cloudinary = require('./cloudinaryConfig');
+
+// --- DATABASE MODELS ---
 const Reply = require('./models/Reply'); 
 const Meeting = require('./models/Meeting');
+const User = require('./models/User');
+const Workspace = require('./models/Workspace');
+const authenticateToken = require('./middleware/auth');
 
 // --- GROQ AI SETUP ---
 const Groq = require('groq-sdk');
@@ -24,17 +29,16 @@ const PORT = 5000;
 app.use(cors());
 app.use(express.json());
 
-// 1. Wrap our Express app in a standard HTTP server so WebSockets can attach to it
+// Create HTTP Server and attach Socket.io
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: { origin: "http://localhost:5173", methods: ["GET", "POST"] }
 });
 
-// 2. Listen for users opening the website
+// Listen for WebSocket connections
 io.on('connection', (socket) => {
     console.log('⚡ A user connected via WebSocket:', socket.id);
-
-    // When a user clicks on a Meeting card, put them in a "Room" for that specific meeting
+    
     socket.on('joinMeeting', (meetingId) => {
         socket.join(meetingId);
         console.log(`User ${socket.id} joined meeting room: ${meetingId}`);
@@ -50,8 +54,85 @@ mongoose.connect(process.env.MONGO_URI, { family: 4 })
   .then(() => console.log("Successfully connected to MongoDB Cloud!"))
   .catch((error) => console.log("Error connecting to MongoDB:", error));
 
-// Routes
-app.get('/api/meetings/:id', async (req, res) => {
+// --- AUTHENTICATION ROUTES ---
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+
+// The Secret Key used to sign the VIP Wristbands 
+const JWT_SECRET = "super_secret_silent_meeting_key";
+
+// Register a new user
+app.post('/api/auth/register', async (req, res) => {
+    try {
+        const { name, email, password } = req.body;
+
+        // 1. Check if user already exists
+        const existingUser = await User.findOne({ email });
+        if (existingUser) return res.status(400).json({ error: "Email already in use" });
+
+        // 2. The Blender: Hash the password
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(password, salt);
+
+        // 3. Save the new user
+        const newUser = new User({ name, email, password: hashedPassword });
+        await newUser.save();
+
+        // 4. Create a default "Personal Workspace" for them
+        const newWorkspace = new Workspace({
+            name: `${name}'s Workspace`,
+            ownerId: newUser._id,
+            members: [newUser._id]
+        });
+        await newWorkspace.save();
+
+        // 5. Hand them their VIP Wristband (JWT Token)
+        const token = jwt.sign({ userId: newUser._id }, JWT_SECRET, { expiresIn: '7d' });
+
+        res.status(201).json({ token, user: { id: newUser._id, name: newUser.name, email: newUser.email } });
+    } catch (error) {
+        console.error("Registration Error:", error);
+        res.status(500).json({ error: "Registration failed" });
+    }
+});
+
+// Log an existing user in
+app.post('/api/auth/login', async (req, res) => {
+    try {
+        const { email, password } = req.body;
+
+        // 1. Find the user
+        const user = await User.findOne({ email });
+        if (!user) return res.status(404).json({ error: "User not found" });
+
+        // 2. Check the password against the hashed version
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (!isMatch) return res.status(400).json({ error: "Invalid credentials" });
+
+        // 3. Hand them a new wristband
+        const token = jwt.sign({ userId: user._id }, JWT_SECRET, { expiresIn: '7d' });
+
+        res.status(200).json({ token, user: { id: user._id, name: user.name, email: user.email } });
+    } catch (error) {
+        console.error("Login Error:", error);
+        res.status(500).json({ error: "Login failed" });
+    }
+});
+
+// --- MEETING & REPLY ROUTES ---
+// 0. Get all Workspaces for the logged-in user
+app.get('/api/workspaces', authenticateToken, async (req, res) => {
+    try {
+        // Find every workspace where this user's ID is in the "members" array
+        const userWorkspaces = await Workspace.find({ members: req.user.userId });
+        res.status(200).json(userWorkspaces);
+    } catch (error) {
+        res.status(500).json({ error: "Failed to fetch workspaces" });
+    }
+});
+
+// 1. Get a specific meeting
+app.get('/api/meetings/:id', authenticateToken, async (req, res) => {
     try {
         const meeting = await Meeting.findById(req.params.id);
         if (!meeting) return res.status(404).json({ error: "Meeting not found" });
@@ -61,9 +142,39 @@ app.get('/api/meetings/:id', async (req, res) => {
     }
 });
 
-app.post('/api/meetings', async (req, res) => {
+// 2. Get meetings (Filtered by the currently selected Workspace)
+app.get('/api/meetings', authenticateToken, async (req, res) => {
     try {
-        const newMeeting = new Meeting({ title: req.body.title, agenda: req.body.agenda });
+        const { workspaceId } = req.query;
+
+        // If the Frontend specifically asks for a workspace, only fetch those meetings!
+        if (workspaceId) {
+            const meetings = await Meeting.find({ workspaceId: workspaceId }).sort({ createdAt: -1 });
+            return res.status(200).json(meetings);
+        }
+
+        // Fallback: If no workspace is selected, just grab everything
+        const userWorkspaces = await Workspace.find({ members: req.user.userId });
+        const workspaceIds = userWorkspaces.map(ws => ws._id);
+        const meetings = await Meeting.find({ workspaceId: { $in: workspaceIds } }).sort({ createdAt: -1 });
+        res.status(200).json(meetings);
+    } catch (error) {
+        res.status(500).json({ error: "Failed to fetch meetings" });
+    }
+});
+
+// 3. Create a new meeting in this user's workspace
+app.post('/api/meetings', authenticateToken, async (req, res) => {
+    try {
+        const userWorkspace = await Workspace.findOne({ members: req.user.userId });
+        
+        const newMeeting = new Meeting({ 
+            title: req.body.title, 
+            agenda: req.body.agenda,
+            // Prioritize the frontend's active workspace, but fallback to the default!
+            workspaceId: req.body.workspaceId || userWorkspace._id 
+        });
+        
         const savedMeeting = await newMeeting.save(); 
         res.status(201).json(savedMeeting);
     } catch (error) {
@@ -71,16 +182,8 @@ app.post('/api/meetings', async (req, res) => {
     }
 });
 
-app.get('/api/meetings', async (req, res) => {
-    try {
-        const meetings = await Meeting.find().sort({ createdAt: -1 });
-        res.status(200).json(meetings);
-    } catch (error) {
-        res.status(500).json({ error: "Failed to fetch meetings" });
-    }
-});
-
-app.get('/api/replies/:meetingId', async (req, res) => {
+// 4. Get all replies for a meeting
+app.get('/api/replies/:meetingId', authenticateToken, async (req, res) => {
     try {
         const replies = await Reply.find({ meetingId: req.params.meetingId }).sort({ createdAt: -1 });
         res.status(200).json(replies);
@@ -152,8 +255,7 @@ app.post('/api/replies', upload.single('video'), async (req, res) => {
 
         await newReply.save();
         
-        // 3. THE MAGIC REAL-TIME PUSH: 
-        // Instantly blast this new video out to anyone sitting in this specific meeting room!
+        // Push over WebSocket
         io.to(meetingId).emit('newReply', newReply);
 
         res.status(201).json(newReply);
@@ -164,7 +266,7 @@ app.post('/api/replies', upload.single('video'), async (req, res) => {
     }
 });
 
-// 4. Important: We must call `server.listen` now instead of `app.listen` so WebSockets work!
+// Call server.listen so WebSockets work
 server.listen(PORT, () => {
     console.log(`Server is running live on http://localhost:${PORT}`);
 });
