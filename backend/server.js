@@ -23,6 +23,17 @@ app.get('/api/status', (req, res) => {
     res.json({ message: "The Silent Meeting Engine is running perfectly!" });
 });
 
+app.get('/api/meetings/:id', async (req, res) => {
+    try {
+        const meeting = await Meeting.findById(req.params.id);
+        if (!meeting) return res.status(404).json({ error: "Meeting not found" });
+        
+        res.status(200).json(meeting);
+    } catch (error) {
+        res.status(500).json({ error: "Failed to fetch meeting" });
+    }
+});
+
 app.post('/api/meetings', async (req, res) => {
     try {
         const newMeeting = new Meeting({

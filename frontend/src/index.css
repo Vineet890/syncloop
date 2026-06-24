@@ -112,3 +112,42 @@ body {
   color: var(--text-secondary);
   font-size: 0.75rem;
 }
+
+.meeting-header {
+  margin-bottom: 2rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--glass-border);
+}
+
+.meeting-header h2 {
+  font-size: 2rem;
+  margin: 0 0 0.5rem 0;
+  color: var(--text-primary);
+}
+
+.agenda-text {
+  color: var(--text-secondary);
+  font-size: 1.1rem;
+  margin-bottom: 1rem;
+}
+
+.meeting-content {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 2rem;
+  align-items: start;
+}
+
+.glass-panel {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  padding: 1.5rem;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+
+.video-thread-section h3, .ai-summary-sidebar h3 {
+  margin-top: 0;
+  margin-bottom: 1rem;
+  color: #c084fc;
+}
