@@ -131,6 +131,39 @@ app.get('/api/workspaces', authenticateToken, async (req, res) => {
     }
 });
 
+// 0.5. Invite a teammate to a Workspace
+app.post('/api/workspaces/invite', authenticateToken, async (req, res) => {
+    try {
+        const { workspaceId, email } = req.body;
+
+        // 1. Find the workspace
+        const workspace = await Workspace.findById(workspaceId);
+        if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+
+        // Security Check: Only the owner of the workspace can invite people!
+        if (workspace.ownerId.toString() !== req.user.userId) {
+            return res.status(403).json({ error: "Only the workspace owner can invite members" });
+        }
+
+        // 2. Look up the user by their email
+        const userToInvite = await User.findOne({ email });
+        if (!userToInvite) return res.status(404).json({ error: "User not found. Tell them to register first!" });
+
+        // 3. Prevent duplicate invites
+        if (workspace.members.includes(userToInvite._id)) {
+            return res.status(400).json({ error: "User is already in this workspace" });
+        }
+
+        // 4. Add them to the team!
+        workspace.members.push(userToInvite._id);
+        await workspace.save();
+
+        res.status(200).json({ message: `Successfully added ${userToInvite.name} to the workspace!` });
+    } catch (error) {
+        res.status(500).json({ error: "Failed to invite teammate" });
+    }
+});
+
 // 1. Get a specific meeting
 app.get('/api/meetings/:id', authenticateToken, async (req, res) => {
     try {
