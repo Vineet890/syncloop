@@ -32,9 +32,9 @@ function LandingView() {
       <main className="flex-1">
         <section className="relative flex flex-col items-center justify-center px-4 py-32 text-center overflow-hidden">
           <div className="relative z-10 mt-12 w-full max-w-6xl mx-auto">
-            <h1 className="max-w-5xl mx-auto mb-8 text-6xl font-black tracking-tighter sm:text-7xl lg:text-[6rem] leading-[1.1]">
+            <h1 className="max-w-5xl mx-auto mb-8 text-5xl font-black tracking-tighter sm:text-7xl lg:text-[6rem] leading-[1.1]">
               <span className="block pb-2">Meetings that</span>
-              <span className="block text-transparent bg-clip-text bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 drop-shadow-sm">don't waste your time.</span>
+              <span className="block text-transparent bg-clip-text bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 drop-shadow-sm pb-4">don't waste your time.</span>
             </h1>
             <p className="max-w-2xl mx-auto mb-12 text-xl font-medium text-muted-foreground leading-relaxed">
               SyncLoop replaces endless live calls with asynchronous video threads. Record your updates, watch them on your own time, and let AI summarize the key takeaways.
