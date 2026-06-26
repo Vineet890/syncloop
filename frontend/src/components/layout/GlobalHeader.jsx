@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { SunIcon, MoonIcon } from '../ui/Icons';
 import NotificationBell from '../ui/NotificationBell';
 
-export default function GlobalHeader({ isDarkMode, toggleDarkMode, isOnline }) {
+export default function GlobalHeader({ isDarkMode, toggleDarkMode, isOnline, toggleSidebar, isSidebarOpen }) {
     const user = JSON.parse(localStorage.getItem('user') || '{}');
     const [dropdownOpen, setDropdownOpen] = useState(false);
 
@@ -13,7 +13,21 @@ export default function GlobalHeader({ isDarkMode, toggleDarkMode, isOnline }) {
     };
 
     return (
-        <header className="sticky top-0 z-50 flex items-center justify-between px-12 py-4 border-b bg-background/80 backdrop-blur-md">
+        <header className="sticky top-0 z-50 flex items-center justify-between px-6 py-4 border-b bg-background/80 backdrop-blur-md">
+            <div className="flex items-center">
+                <button 
+                    onClick={toggleSidebar} 
+                    className="p-2 -ml-2 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-muted-foreground hover:text-foreground active:scale-95"
+                    title={isSidebarOpen ? "Close Sidebar" : "Open Sidebar"}
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <line x1="4" y1="12" x2="20" y2="12"></line>
+                        <line x1="4" y1="6" x2="20" y2="6"></line>
+                        <line x1="4" y1="18" x2="20" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+
             <div className="flex flex-1 justify-center hidden md:flex">
                 <div 
                   className={`flex items-center gap-2 px-3 py-1.5 rounded-full border cursor-default transition-colors ${
