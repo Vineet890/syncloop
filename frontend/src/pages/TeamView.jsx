@@ -3,32 +3,48 @@ import { apiFetch } from '../utils/api';
 
 function TeamView({ activeWorkspace, setActiveWorkspace }) {
   const [inviteEmail, setInviteEmail] = useState('');
+  const [toast, setToast] = useState({ visible: false, message: '', type: 'success' });
+  const [memberToRemove, setMemberToRemove] = useState(null);
   const user = JSON.parse(localStorage.getItem('user') || '{}');
   
+  const showToast = (message, type = 'success') => {
+      setToast({ visible: true, message, type });
+      setTimeout(() => setToast({ visible: false, message: '', type: 'success' }), 3000);
+  };
+
   const handleInvite = async (e) => {
     e.preventDefault();
     if (!activeWorkspace) return;
-    await apiFetch(`/api/workspaces/${activeWorkspace._id}/invite`, {
+    const res = await apiFetch(`/api/workspaces/${activeWorkspace._id}/invite`, {
       method: 'POST',
       body: JSON.stringify({ email: inviteEmail })
     });
-    setInviteEmail('');
-    alert('User invited!');
+    
+    if (res && res.ok) {
+        setInviteEmail('');
+        showToast('Invite sent successfully!');
+    } else {
+        const err = await res.json();
+        showToast(err.error || 'Failed to send invite.', 'error');
+    }
   };
 
-  const handleRemoveMember = async (memberId) => {
-    if (!window.confirm('Are you sure you want to remove this member from the workspace?')) return;
-    const res = await apiFetch(`/api/workspaces/${activeWorkspace._id}/members/${memberId}`, {
+  const executeRemoveMember = async () => {
+    if (!memberToRemove || !activeWorkspace) return;
+    const res = await apiFetch(`/api/workspaces/${activeWorkspace._id}/members/${memberToRemove._id}`, {
         method: 'DELETE'
     });
     if (res && res.ok) {
         setActiveWorkspace(prev => ({
             ...prev,
-            members: prev.members.filter(m => m._id !== memberId)
+            members: prev.members.filter(m => m._id !== memberToRemove._id)
         }));
+        setMemberToRemove(null);
+        showToast('Member removed from workspace.');
     } else {
         const err = await res.json();
-        alert(err.error || 'Failed to remove member');
+        setMemberToRemove(null);
+        showToast(err.error || 'Failed to remove member.', 'error');
     }
   };
 
@@ -41,7 +57,45 @@ function TeamView({ activeWorkspace, setActiveWorkspace }) {
   }
 
   return (
-    <div className="flex-1 w-full px-16 py-12">
+    <div className="flex-1 w-full px-16 py-12 relative">
+        {/* Toast Notification */}
+        {toast.visible && (
+            <div className={`fixed top-6 left-1/2 -translate-x-1/2 z-50 px-6 py-3 rounded-full shadow-lg border backdrop-blur-md font-medium text-sm flex items-center gap-2 animate-in fade-in slide-in-from-top-4 transition-all ${toast.type === 'error' ? 'bg-red-500/10 border-red-500/20 text-red-600 dark:text-red-400' : 'bg-green-500/10 border-green-500/20 text-green-700 dark:text-green-400'}`}>
+                {toast.type === 'error' ? (
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                ) : (
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                )}
+                {toast.message}
+            </div>
+        )}
+
+        {/* Remove Member Confirmation Modal */}
+        {memberToRemove && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in">
+                <div className="bg-card text-card-foreground p-8 rounded-3xl shadow-2xl max-w-md w-full mx-4 border animate-in zoom-in-95">
+                    <h3 className="text-xl font-bold mb-2">Remove Member?</h3>
+                    <p className="text-muted-foreground mb-8">
+                        Are you sure you want to remove <strong className="text-foreground">{memberToRemove.name || memberToRemove.email}</strong> from this workspace? They will lose access to all threads.
+                    </p>
+                    <div className="flex justify-end gap-3">
+                        <button 
+                            onClick={() => setMemberToRemove(null)}
+                            className="px-5 py-2.5 text-sm font-medium rounded-full hover:bg-muted transition-colors"
+                        >
+                            Cancel
+                        </button>
+                        <button 
+                            onClick={executeRemoveMember}
+                            className="px-5 py-2.5 text-sm font-medium rounded-full bg-red-600 text-white hover:bg-red-700 transition-colors shadow-sm"
+                        >
+                            Yes, remove
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
+
         <h1 className="mb-2 text-3xl font-bold tracking-tight text-foreground">Team Directory</h1>
         <p className="mb-12 text-lg text-muted-foreground">Manage members of {activeWorkspace.name}</p>
 
@@ -63,8 +117,8 @@ function TeamView({ activeWorkspace, setActiveWorkspace }) {
                                 </div>
                                 {user.id === activeWorkspace.ownerId && member._id !== activeWorkspace.ownerId && (
                                     <button 
-                                        onClick={() => handleRemoveMember(member._id)}
-                                        className="text-xs font-semibold px-3 py-1.5 rounded-md text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 border border-transparent hover:border-red-200 dark:hover:border-red-800 transition-colors"
+                                        onClick={() => setMemberToRemove(member)}
+                                        className="text-xs font-semibold px-4 py-2 rounded-full text-red-600 bg-red-50 dark:bg-red-900/10 hover:bg-red-100 dark:hover:bg-red-900/30 border border-red-100 dark:border-red-900/30 transition-colors"
                                     >
                                         Remove
                                     </button>
@@ -99,8 +153,8 @@ function TeamView({ activeWorkspace, setActiveWorkspace }) {
                     <h3 className="mb-4 text-xl font-semibold tracking-tight">Invite Teammate</h3>
                     <p className="mb-6 text-sm text-muted-foreground">Add a coworker to <strong className="font-medium text-foreground">{activeWorkspace.name}</strong>.</p>
                     <form onSubmit={handleInvite} className="flex flex-col gap-4">
-                        <input type="email" placeholder="Email address" className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} required />
-                        <button type="submit" className="inline-flex items-center justify-center h-10 px-4 py-2 text-sm font-medium text-white transition-colors bg-green-600 rounded-md shadow hover:bg-green-700 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50">Send Invite</button>
+                        <input type="email" placeholder="Email address" className="flex h-11 w-full rounded-xl border border-input bg-background px-4 py-2 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} required />
+                        <button type="submit" className="inline-flex items-center justify-center h-11 px-4 py-2 text-sm font-bold text-white transition-all bg-primary rounded-xl shadow-md hover:bg-primary/90 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:pointer-events-none disabled:opacity-50 active:scale-95">Send Invite</button>
                     </form>
                 </div>
             </div>
