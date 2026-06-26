@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { SunIcon, MoonIcon } from '../ui/Icons';
 import NotificationBell from '../ui/NotificationBell';
 
@@ -14,7 +15,7 @@ export default function GlobalHeader({ isDarkMode, toggleDarkMode, isOnline, tog
 
     return (
         <header className="sticky top-0 z-50 flex items-center justify-between px-6 py-4 border-b bg-background/80 backdrop-blur-md">
-            <div className="flex items-center">
+            <div className="flex items-center gap-4">
                 <button 
                     onClick={toggleSidebar} 
                     className="p-2 -ml-2 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-muted-foreground hover:text-foreground active:scale-95"
@@ -26,6 +27,12 @@ export default function GlobalHeader({ isDarkMode, toggleDarkMode, isOnline, tog
                         <line x1="4" y1="18" x2="20" y2="18"></line>
                     </svg>
                 </button>
+                <Link to="/" className="flex items-center gap-2 text-lg font-semibold tracking-tight text-foreground hover:opacity-80 transition-opacity">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" className="text-primary drop-shadow-md" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 12c-2-2.67-4-4-6-4a4 4 0 1 0 0 8c2 0 4-1.33 6-4Zm0 0c2 2.67 4 4 6 4a4 4 0 1 0 0-8c-2 0-4 1.33-6 4Z"/>
+                    </svg>
+                    <span className="font-bold tracking-tight">SyncLoop</span>
+                </Link>
             </div>
 
             <div className="flex flex-1 justify-center hidden md:flex">
