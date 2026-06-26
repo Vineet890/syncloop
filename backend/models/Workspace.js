@@ -3,16 +3,20 @@ const mongoose = require('mongoose');
 const workspaceSchema = new mongoose.Schema({
     name: { 
         type: String, 
-        required: true 
+        required: true,
+        trim: true,
+        maxlength: 50
     },
     ownerId: { 
         type: mongoose.Schema.Types.ObjectId, 
         ref: 'User', 
-        required: true 
+        required: true,
+        index: true 
     },
     members: [{ 
         type: mongoose.Schema.Types.ObjectId, 
-        ref: 'User' 
+        ref: 'User',
+        index: true 
     }],
     createdAt: { 
         type: Date, 

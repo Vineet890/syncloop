@@ -1,303 +1,271 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, Tooltip, ResponsiveContainer, XAxis, YAxis } from 'recharts';
+import { apiFetch } from '../utils/api';
 
-function Dashboard() {
+function Dashboard({ activeWorkspace }) {
+  const navigate = useNavigate();
   const [meetings, setMeetings] = useState([]);
-  const [title, setTitle] = useState('');
-  const [agenda, setAgenda] = useState('');
+  const [newMeetingTitle, setNewMeetingTitle] = useState('');
   
-  const [workspaces, setWorkspaces] = useState([]);
-  const [activeWorkspace, setActiveWorkspace] = useState(null);
-  const [newWorkspaceName, setNewWorkspaceName] = useState('');
-  const [showCreateWorkspace, setShowCreateWorkspace] = useState(false);
-  const [inviteEmail, setInviteEmail] = useState('');
-  const [showInviteModal, setShowInviteModal] = useState(false);
-
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [activeThreads, setActiveThreads] = useState(0);
+  const [resolvedDiscussions, setResolvedDiscussions] = useState(0);
+  const [totalVideos, setTotalVideos] = useState(0);
+  const [analyticsData, setAnalyticsData] = useState([]);
 
-  // NEW: Analytics State
-  const [analytics, setAnalytics] = useState(null);
-
-  const navigate = useNavigate();
   const user = JSON.parse(localStorage.getItem('user') || '{}');
 
   useEffect(() => {
-    fetchWorkspaces();
-  }, []);
-
-  useEffect(() => {
     if (activeWorkspace) {
-        fetchMeetings(activeWorkspace._id);
-        fetchAnalytics(activeWorkspace._id); // Fetch the KPI Data!
-        clearSearch();
+      fetchMeetings(activeWorkspace._id);
+      fetchAnalytics(activeWorkspace._id);
     }
   }, [activeWorkspace]);
 
-  const fetchWorkspaces = async () => {
-    const token = localStorage.getItem('token');
-    const response = await fetch('http://localhost:5000/api/workspaces', { headers: { 'Authorization': `Bearer ${token}` } });
-    const data = await response.json();
-    setWorkspaces(data);
-    if (data.length > 0 && !activeWorkspace) setActiveWorkspace(data[0]);
-  };
-
   const fetchMeetings = async (workspaceId) => {
-    const token = localStorage.getItem('token');
-    const response = await fetch(`http://localhost:5000/api/meetings?workspaceId=${workspaceId}`, { headers: { 'Authorization': `Bearer ${token}` } });
-    const data = await response.json();
-    setMeetings(data);
+    const res = await apiFetch(`/api/meetings?workspaceId=${workspaceId}`);
+    if (res && res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) setMeetings(data);
+    }
   };
 
-  // NEW: Fetch Analytics
   const fetchAnalytics = async (workspaceId) => {
-    const token = localStorage.getItem('token');
-    const response = await fetch(`http://localhost:5000/api/analytics/${workspaceId}`, { headers: { 'Authorization': `Bearer ${token}` } });
-    if (response.ok) {
-        const data = await response.json();
-        setAnalytics(data);
-    }
+    try {
+        const res = await apiFetch(`/api/analytics/${workspaceId}`);
+        if (res && res.ok) {
+            const data = await res.json();
+            setActiveThreads(data.activeThreads || 0);
+            setResolvedDiscussions(data.resolvedDiscussions || 0);
+            setTotalVideos(data.totalVideos || 0);
+            setAnalyticsData(data.chartData || []);
+        }
+    } catch (e) { console.error(e); }
   };
 
-  const handleCreateWorkspace = async (e) => {
-    e.preventDefault();
-    const token = localStorage.getItem('token');
-    const response = await fetch('http://localhost:5000/api/workspaces', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ name: newWorkspaceName })
-    });
-    if (response.ok) {
-        setNewWorkspaceName('');
-        setShowCreateWorkspace(false);
-        fetchWorkspaces();
-    }
+  const handleSearch = async (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      if (!searchQuery.trim()) {
+          setIsSearching(false);
+          setSearchResults([]);
+          return;
+      }
+      setIsSearching(true);
+      try {
+          const res = await apiFetch(`/api/search?workspaceId=${activeWorkspace._id}&q=${encodeURIComponent(searchQuery)}`);
+          if (res && res.ok) {
+              const data = await res.json();
+              setSearchResults(data);
+          }
+      } catch (err) { console.error("Search failed", err); }
   };
 
   const handleCreateMeeting = async (e) => {
     e.preventDefault();
-    const token = localStorage.getItem('token');
-    await fetch('http://localhost:5000/api/meetings', {
+    if (!activeWorkspace) return;
+    const response = await apiFetch('/api/meetings', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify({ title, agenda, workspaceId: activeWorkspace._id }),
+      body: JSON.stringify({ title: newMeetingTitle, agenda: "No agenda provided", workspaceId: activeWorkspace._id })
     });
-    setTitle('');
-    setAgenda('');
-    fetchMeetings(activeWorkspace._id);
-    fetchAnalytics(activeWorkspace._id); // Refresh metrics!
-  };
-
-  const handleInvite = async (e) => {
-    e.preventDefault();
-    const token = localStorage.getItem('token');
-    const response = await fetch(`http://localhost:5000/api/workspaces/${activeWorkspace._id}/invite`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ email: inviteEmail })
-    });
-
-    if (response.ok) {
-        alert("Teammate invited successfully!");
-        setInviteEmail('');
-        setShowInviteModal(false);
-        fetchWorkspaces();
-        fetchAnalytics(activeWorkspace._id); // Refresh teammate count!
-    } else {
-        const errorData = await response.json();
-        alert(errorData.error || "Failed to invite teammate");
+    if (response && response.ok) {
+        const newMeeting = await response.json();
+        setNewMeetingTitle('');
+        navigate(`/meetings/${newMeeting._id}`);
     }
   };
 
-  const handleSearch = async (e) => {
-    e.preventDefault();
-    if (!searchQuery.trim()) {
-      setIsSearching(false);
-      return;
-    }
-    const token = localStorage.getItem('token');
-    try {
-      const res = await fetch(`http://localhost:5000/api/search?q=${searchQuery}&workspaceId=${activeWorkspace._id}`, { headers: { 'Authorization': `Bearer ${token}` } });
-      const data = await res.json();
-      setSearchResults(data);
-      setIsSearching(true);
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const clearSearch = () => {
-    setSearchQuery('');
-    setIsSearching(false);
-    setSearchResults([]);
-  };
+  // Removed hardcoded analyticsData since it's now dynamically set via state
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh' }}>
+    <div className="flex flex-col flex-1 w-full">
       
-      {/* LEFT SIDEBAR */}
-      <div className="workspace-sidebar">
-        <h2 style={{ color: '#e2e8f0', marginBottom: '2rem', fontSize: '1.2rem' }}>Async Sync</h2>
-        
-        <div style={{ marginBottom: '2rem' }}>
-            <h3 style={{ fontSize: '0.8rem', textTransform: 'uppercase', color: '#64748b', letterSpacing: '1px', marginBottom: '1rem' }}>
-                Your Workspaces
-            </h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                {workspaces.map(ws => (
-                    <button 
-                        key={ws._id}
-                        onClick={() => setActiveWorkspace(ws)}
-                        className={`workspace-btn ${activeWorkspace?._id === ws._id ? 'active' : ''}`}
-                    >
-                        <span style={{ fontSize: '1.2rem' }}>{ws.name.charAt(0)}</span>
-                        {ws.name}
-                    </button>
-                ))}
-            </div>
+      {/* SEARCH BAR */}
+      <div className="w-full px-16 pt-12 pb-6 max-w-4xl mx-auto">
+        <div className="relative w-full">
+            <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="absolute z-10 left-6 top-1/2 -translate-y-1/2 text-muted-foreground/60 pointer-events-none">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <input 
+                type="text"
+                placeholder="Search transcripts, action items, titles..."
+                className="w-full py-4 pl-16 pr-8 text-lg font-medium transition-all bg-white/60 border rounded-2xl shadow-sm backdrop-blur-md text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary dark:bg-black/60 dark:border-white/10"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={handleSearch}
+            />
         </div>
-
-        <button onClick={() => setShowCreateWorkspace(!showCreateWorkspace)} className="btn-secondary" style={{ width: '100%', marginBottom: '1rem' }}>
-            + New Workspace
-        </button>
-
-        {showCreateWorkspace && (
-            <form onSubmit={handleCreateWorkspace} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                <input type="text" placeholder="Workspace Name" className="glass-input" value={newWorkspaceName} onChange={(e) => setNewWorkspaceName(e.target.value)} required />
-                <button type="submit" className="btn-primary">Create</button>
-            </form>
-        )}
       </div>
 
-      {/* MAIN CONTENT AREA */}
-      <div style={{ flex: 1, padding: '3rem' }}>
-        
-        {activeWorkspace ? (
-            <div>
-                {/* HEADER & SEARCH BAR */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                        <h1 style={{ color: '#c084fc', margin: 0 }}>{activeWorkspace.name}</h1>
-                        {user.id === activeWorkspace.ownerId && (
-                            <button onClick={() => setShowInviteModal(true)} className="btn-secondary" style={{ color: '#10b981', borderColor: '#10b981', padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>
-                                + Invite Teammate
-                            </button>
-                        )}
+      <div className="flex-1 w-full px-16 pb-12">
+          {!activeWorkspace ? (
+          <div className="p-16 text-center border bg-white/65 backdrop-blur-md rounded-2xl shadow-sm dark:bg-black/65 dark:border-white/5">
+              <h2 className="text-xl font-semibold tracking-tight text-foreground">Select or create a workspace to begin!</h2>
+          </div>
+          ) : (
+          <>
+              <div className="mb-10 flex items-center gap-6">
+                  <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary to-indigo-600 shadow-lg shadow-primary/20 flex items-center justify-center text-white text-3xl font-black shrink-0">
+                      {activeWorkspace.name.charAt(0).toUpperCase()}
+                  </div>
+                  <div>
+                      <h1 className="text-4xl md:text-5xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-foreground to-foreground/70">{activeWorkspace.name}</h1>
+                      <p className="mt-2 text-lg text-muted-foreground font-medium">Manage your async meetings and team productivity.</p>
+                  </div>
+              </div>
+
+              {!isSearching && (
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-12">
+                      <div className="flex flex-col gap-4">
+                          <div className="relative overflow-hidden p-6 rounded-2xl border border-blue-100 dark:border-blue-900/50 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-900/20 shadow-sm hover:shadow-md transition-all group">
+                              <div className="flex items-center justify-between mb-4">
+                                  <h3 className="text-sm font-semibold text-blue-700 dark:text-blue-300">Active Threads</h3>
+                                  <div className="p-2 bg-blue-100 dark:bg-blue-900/50 rounded-lg text-blue-600 dark:text-blue-400">
+                                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                                  </div>
+                              </div>
+                              <div className="text-4xl font-black tracking-tight text-blue-900 dark:text-blue-100">{activeThreads}</div>
+                              <div className="absolute -bottom-4 -right-4 w-24 h-24 bg-blue-500/10 rounded-full blur-2xl group-hover:bg-blue-500/20 transition-all"></div>
+                          </div>
+                          
+                          <div className="relative overflow-hidden p-6 rounded-2xl border border-emerald-100 dark:border-emerald-900/50 bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-950/20 dark:to-teal-900/20 shadow-sm hover:shadow-md transition-all group">
+                              <div className="flex items-center justify-between mb-4">
+                                  <h3 className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">Resolved Discussions</h3>
+                                  <div className="p-2 bg-emerald-100 dark:bg-emerald-900/50 rounded-lg text-emerald-600 dark:text-emerald-400">
+                                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                                  </div>
+                              </div>
+                              <div className="text-4xl font-black tracking-tight text-emerald-900 dark:text-emerald-100">{resolvedDiscussions}</div>
+                              <div className="absolute -bottom-4 -right-4 w-24 h-24 bg-emerald-500/10 rounded-full blur-2xl group-hover:bg-emerald-500/20 transition-all"></div>
+                          </div>
+
+                          <div className="relative overflow-hidden p-6 rounded-2xl border border-purple-100 dark:border-purple-900/50 bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-950/20 dark:to-pink-900/20 shadow-sm hover:shadow-md transition-all group">
+                              <div className="flex items-center justify-between mb-4">
+                                  <h3 className="text-sm font-semibold text-purple-700 dark:text-purple-300">Total Videos</h3>
+                                  <div className="p-2 bg-purple-100 dark:bg-purple-900/50 rounded-lg text-purple-600 dark:text-purple-400">
+                                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg>
+                                  </div>
+                              </div>
+                              <div className="text-4xl font-black tracking-tight text-purple-900 dark:text-purple-100">{totalVideos}</div>
+                              <div className="absolute -bottom-4 -right-4 w-24 h-24 bg-purple-500/10 rounded-full blur-2xl group-hover:bg-purple-500/20 transition-all"></div>
+                          </div>
+                      </div>
+
+                      <div className="lg:col-span-2 relative p-8 rounded-2xl border border-border/50 bg-white/60 dark:bg-black/40 backdrop-blur-xl shadow-sm hover:shadow-md transition-all flex flex-col justify-between">
+                          <div className="flex items-center justify-between mb-8 z-10">
+                              <div>
+                                  <h3 className="text-xl font-bold tracking-tight text-foreground">Top Active Discussions</h3>
+                                  <p className="text-sm text-muted-foreground mt-1">Threads with the highest engagement.</p>
+                              </div>
+                              <div className="p-2 bg-primary/10 rounded-lg text-primary">
+                                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+                              </div>
+                          </div>
+                          
+                          <div className="flex-1 min-h-[250px] z-10">
+                              {analyticsData.length === 0 ? (
+                                  <div className="flex items-center justify-center w-full h-full border-2 border-dashed rounded-xl border-border/50 text-muted-foreground">
+                                      No active discussions yet
+                                  </div>
+                              ) : (
+                                  <ResponsiveContainer width="100%" height="100%">
+                                      <BarChart data={analyticsData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+                                          <defs>
+                                              <linearGradient id="colorEngagement" x1="0" y1="0" x2="0" y2="1">
+                                                  <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.9}/>
+                                                  <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0.2}/>
+                                              </linearGradient>
+                                          </defs>
+                                          <XAxis dataKey="name" stroke="hsl(var(--muted-foreground))" fontSize={12} tickLine={false} axisLine={false} dy={10} />
+                                          <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} tickLine={false} axisLine={false} dx={-10} allowDecimals={false} />
+                                          <Tooltip cursor={{ fill: 'hsl(var(--accent))' }} contentStyle={{ backgroundColor: 'hsl(var(--background))', border: '1px solid hsl(var(--border))', borderRadius: '8px', color: 'hsl(var(--foreground))' }} />
+                                          <Bar dataKey="engagement" fill="url(#colorEngagement)" radius={[6, 6, 0, 0]} maxBarSize={50} />
+                                      </BarChart>
+                                  </ResponsiveContainer>
+                              )}
+                          </div>
+                      </div>
+                  </div>
+              )}
+
+              {isSearching ? (
+                  <div>
+                      <div className="flex items-center justify-between mb-6">
+                          <h2 className="text-2xl font-bold tracking-tight text-primary">Search Results</h2>
+                          <button onClick={() => { setIsSearching(false); setSearchQuery(''); }} className="px-4 py-2 text-sm font-medium transition-colors border rounded-md shadow-sm bg-white/50 hover:bg-accent hover:text-accent-foreground dark:bg-black/50">Clear Search</button>
+                      </div>
+                      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+                          {searchResults.map((result) => (
+                              <div key={result._id} className="flex flex-col justify-between p-6 transition-all border cursor-pointer bg-white/65 backdrop-blur-md rounded-2xl shadow-sm hover:-translate-y-1 hover:shadow-md hover:border-primary/50 dark:bg-black/65 dark:border-white/5" onClick={() => navigate(`/meetings/${result.meetingId || result._id}`)}>
+                                  <div>
+                                      <h3 className="mb-2 text-lg font-semibold tracking-tight text-foreground">Meeting: {result.meetingTitle || result.title}</h3>
+                                      <span className="inline-flex items-center px-2.5 py-0.5 mb-4 text-xs font-semibold transition-colors border border-transparent rounded-full bg-primary/10 text-primary">Match Found</span>
+                                  </div>
+                                  {result.textContent && (
+                                      <p className="p-4 text-sm border-l-2 text-muted-foreground bg-white/50 rounded-r-md border-primary dark:bg-white/5">
+                                          "...{result.textContent.substring(0, 100)}..."
+                                      </p>
+                                  )}
+                              </div>
+                          ))}
+                      </div>
+                  </div>
+              ) : (
+                  <div>
+                    {activeWorkspace && user.id === activeWorkspace.ownerId && (
+                    <div className="flex flex-col mb-12">
+                      <h3 className="mb-4 text-xl font-semibold tracking-tight text-foreground">Start a New Discussion</h3>
+                      <form onSubmit={handleCreateMeeting} className="flex gap-4 w-full bg-white/40 dark:bg-black/40 p-2 rounded-xl border shadow-sm backdrop-blur-md">
+                          <input type="text" placeholder="What do you want to discuss? (e.g., Q3 Marketing Sync)" className="flex h-12 w-full rounded-lg bg-transparent px-4 py-2 text-base outline-none placeholder:text-muted-foreground" value={newMeetingTitle} onChange={(e) => setNewMeetingTitle(e.target.value)} required />
+                          <button type="submit" className="whitespace-nowrap inline-flex items-center justify-center h-12 px-8 text-sm font-bold transition-all rounded-lg shadow-md bg-primary text-primary-foreground hover:bg-primary/90 hover:scale-105 active:scale-95">Create Thread</button>
+                      </form>
                     </div>
-                    
-                    <form onSubmit={handleSearch} style={{ display: 'flex', gap: '0.5rem' }}>
-                        <input type="text" placeholder="Search transcripts & titles..." className="glass-input" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} style={{ margin: 0, width: '300px' }} />
-                        <button type="submit" className="btn-primary" style={{ padding: '0.5rem 1rem' }}>Search</button>
-                    </form>
-                </div>
+                    )}
 
-                {isSearching ? (
-                    <div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-                            <h2 style={{ color: '#10b981' }}>Search Results for "{searchQuery}"</h2>
-                            <button onClick={clearSearch} className="btn-secondary" style={{ padding: '0.5rem 1rem' }}>Clear Search</button>
-                        </div>
-                        
-                        <div className="meetings-grid">
-                            {searchResults.map((meeting) => (
-                                <div key={meeting._id} className="meeting-card" onClick={() => navigate(`/meeting/${meeting._id}`)}>
-                                    <h3 style={{ color: '#e2e8f0', marginBottom: '0.5rem' }}>{meeting.title}</h3>
-                                    <p style={{ color: '#94a3b8', fontSize: '0.9rem', marginBottom: '1rem' }}>{meeting.agenda}</p>
-                                    <span className={meeting.status === 'Open' ? 'status-badge' : 'status-badge closed'}>{meeting.status}</span>
-                                </div>
-                            ))}
-                            {searchResults.length === 0 && (
-                                <div className="glass-panel" style={{ textAlign: 'center', color: '#94a3b8' }}>
-                                    No videos or meetings found matching "{searchQuery}".
-                                </div>
-                            )}
-                        </div>
+                    <div className="flex flex-col mb-6">
+                      <h3 className="text-xl font-semibold tracking-tight text-foreground">Active Threads</h3>
                     </div>
-                ) : (
-                    <div>
-                        {/* NEW: ANALYTICS KPI DASHBOARD */}
-                        {analytics && (
-                            <div style={{ display: 'flex', gap: '2rem', marginBottom: '3rem' }}>
-                                
-                                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                                    <div className="glass-panel" style={{ textAlign: 'center', padding: '1.5rem', display: 'flex', flexDirection: 'column', justifyContent: 'center', flex: 1 }}>
-                                        <h3 style={{ color: '#94a3b8', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '1px' }}>Total Meetings</h3>
-                                        <p style={{ fontSize: '3rem', color: '#c084fc', margin: '0.5rem 0 0 0', fontWeight: 'bold' }}>{analytics.totalMeetings}</p>
-                                    </div>
-                                    <div className="glass-panel" style={{ textAlign: 'center', padding: '1.5rem', display: 'flex', flexDirection: 'column', justifyContent: 'center', flex: 1 }}>
-                                        <h3 style={{ color: '#94a3b8', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '1px' }}>Recorded Videos</h3>
-                                        <p style={{ fontSize: '3rem', color: '#10b981', margin: '0.5rem 0 0 0', fontWeight: 'bold' }}>{analytics.totalVideos}</p>
-                                    </div>
-                                </div>
 
-                                <div className="glass-panel" style={{ flex: 2, display: 'flex', flexDirection: 'column' }}>
-                                    <h3 style={{ marginBottom: '1rem', color: '#e2e8f0' }}>Workspace Productivity</h3>
-                                    <div style={{ flex: 1, minHeight: '200px' }}>
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <BarChart data={[
-                                                { name: 'Meetings', count: analytics.totalMeetings },
-                                                { name: 'Videos', count: analytics.totalVideos },
-                                                { name: 'Teammates', count: analytics.totalMembers }
-                                            ]}>
-                                                <XAxis dataKey="name" stroke="#94a3b8" tick={{ fill: '#94a3b8' }} />
-                                                <YAxis stroke="#94a3b8" allowDecimals={false} tick={{ fill: '#94a3b8' }} />
-                                                <Tooltip cursor={{fill: 'rgba(255,255,255,0.05)'}} contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '8px', color: '#fff' }} />
-                                                <Bar dataKey="count" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
-                                            </BarChart>
-                                        </ResponsiveContainer>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {user.id === activeWorkspace.ownerId && (
-                            <div className="glass-panel" style={{ marginBottom: '3rem' }}>
-                                <h2>Start a New Silent Meeting</h2>
-                                <form onSubmit={handleCreateMeeting} style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
-                                    <input type="text" placeholder="Meeting Title" className="glass-input" value={title} onChange={(e) => setTitle(e.target.value)} required />
-                                    <input type="text" placeholder="Agenda / Topic" className="glass-input" value={agenda} onChange={(e) => setAgenda(e.target.value)} required />
-                                    <button type="submit" className="btn-primary">Create Meeting</button>
-                                </form>
-                            </div>
-                        )}
-
-                        <h2 style={{ color: '#e2e8f0', marginBottom: '1.5rem' }}>Active Meetings</h2>
-                        <div className="meetings-grid">
-                            {meetings.map((meeting) => (
-                                <div key={meeting._id} className="meeting-card" onClick={() => navigate(`/meeting/${meeting._id}`)}>
-                                    <h3 style={{ color: '#e2e8f0', marginBottom: '0.5rem' }}>{meeting.title}</h3>
-                                    <p style={{ color: '#94a3b8', fontSize: '0.9rem', marginBottom: '1rem' }}>{meeting.agenda}</p>
-                                    <span className={meeting.status === 'Open' ? 'status-badge' : 'status-badge closed'}>{meeting.status}</span>
-                                </div>
-                            ))}
-                            {meetings.length === 0 && <p style={{ color: '#94a3b8' }}>No meetings found in this workspace.</p>}
-                        </div>
+                    <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+                      {meetings.map(m => (
+                          <div key={m._id} className="flex flex-col justify-between p-6 transition-all border cursor-pointer bg-white/65 backdrop-blur-md rounded-2xl shadow-sm hover:-translate-y-1 hover:shadow-md hover:border-primary/50 dark:bg-black/65 dark:border-white/5" onClick={() => navigate(`/meetings/${m._id}`)}>
+                          <div>
+                              <h3 className="mb-2 text-lg font-semibold tracking-tight text-foreground">{m.title}</h3>
+                              <p className="mb-4 text-sm text-muted-foreground">{m.agenda || 'No agenda provided'}</p>
+                          </div>
+                          <span className={`inline-flex items-center px-2.5 py-0.5 text-xs font-semibold transition-colors border border-transparent rounded-full w-fit ${m.status === 'Open' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' : 'bg-secondary text-secondary-foreground'}`}>{m.status}</span>
+                          </div>
+                      ))}
+                      {meetings.length === 0 && (
+                          <p className="text-muted-foreground">No meetings found. Start a new thread above!</p>
+                      )}
                     </div>
-                )}
-            </div>
-        ) : (
-            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', color: '#64748b' }}>
-                <h2>Create or Select a Workspace to begin!</h2>
-            </div>
-        )}
-
+                  </div>
+              )}
+          </>
+          )}
       </div>
 
-      {showInviteModal && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
-          <div className="glass-panel" style={{ width: '400px', position: 'relative' }}>
-            <button onClick={() => setShowInviteModal(false)} style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
-            <h2 style={{ marginBottom: '1rem', color: '#e2e8f0' }}>Invite to {activeWorkspace?.name}</h2>
-            <form onSubmit={handleInvite} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <input type="email" placeholder="teammate@example.com" className="glass-input" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} required />
-              <button type="submit" className="btn-primary" style={{ backgroundColor: '#10b981' }}>Send Invite</button>
-            </form>
+      {/* PRO FOOTER */}
+      <footer className="px-12 py-12 mt-auto border-t bg-muted/20">
+        <div className="flex flex-col items-center justify-between gap-6 mx-auto md:flex-row max-w-7xl">
+          <div className="flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" className="text-muted-foreground" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 12c-2-2.67-4-4-6-4a4 4 0 1 0 0 8c2 0 4-1.33 6-4Zm0 0c2 2.67 4 4 6 4a4 4 0 1 0 0-8c-2 0-4 1.33-6 4Z"/>
+            </svg>
+            <span className="font-semibold text-muted-foreground">SyncLoop</span>
+          </div>
+          <div className="flex gap-6 text-sm text-muted-foreground">
+            <p>Built by Vineet Kumar</p>
+            <a href="mailto:vineet765245@gmail.com" className="transition-colors hover:text-primary">Contact Support</a>
+            <a href="https://github.com/vineet765245" target="_blank" rel="noreferrer" className="transition-colors hover:text-primary">GitHub</a>
           </div>
         </div>
-      )}
-      
+      </footer>
     </div>
   );
 }

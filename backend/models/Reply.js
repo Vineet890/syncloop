@@ -4,13 +4,15 @@ const replySchema = new mongoose.Schema({
     meetingId: { 
         type: mongoose.Schema.Types.ObjectId, 
         ref: 'Meeting',
-        required: true 
+        required: true,
+        index: true 
     },
     // We need to know WHO recorded this video!
     userId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
-        required: true
+        required: true,
+        index: true
     },
     videoUrl: { 
         type: String,

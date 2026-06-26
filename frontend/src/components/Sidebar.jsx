@@ -1,127 +1,100 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
+import { apiFetch } from '../utils/api';
 
 function Sidebar({ activeWorkspace, setActiveWorkspace }) {
-  const navigate = useNavigate();
   const [workspaces, setWorkspaces] = useState([]);
-  const [showProfile, setShowProfile] = useState(false);
-  
-  const user = JSON.parse(localStorage.getItem('user') || '{}');
-  const initial = user.name ? user.name.charAt(0).toUpperCase() : '?';
+  const [isCreating, setIsCreating] = useState(false);
+  const [newWorkspaceName, setNewWorkspaceName] = useState('');
+  const location = useLocation();
 
-  useEffect(() => {
-    const token = localStorage.getItem('token');
-    fetch('http://localhost:5000/api/workspaces', {
-      headers: { 'Authorization': `Bearer ${token}` }
-    })
-      .then(res => res.json())
-      .then(data => {
-        if (Array.isArray(data)) {
-          setWorkspaces(data);
-          if (data.length > 0 && !activeWorkspace) {
-            setActiveWorkspace(data[0]);
-          }
+  const fetchWorkspaces = async () => {
+    const res = await apiFetch('/api/workspaces');
+    if (res && res.ok) {
+        const data = await res.json();
+        setWorkspaces(data);
+        if (data.length > 0 && !activeWorkspace) {
+        setActiveWorkspace(data[0]);
         }
-      });
-  }, [activeWorkspace, setActiveWorkspace]);
+    }
+  };
 
-  // Click-Outside Listener to gracefully close the Profile Modal
-  useEffect(() => {
-    if (!showProfile) return;
-    const closeDropdown = () => setShowProfile(false);
-    document.addEventListener('click', closeDropdown);
-    return () => document.removeEventListener('click', closeDropdown);
-  }, [showProfile]);
+  useEffect(() => { fetchWorkspaces(); }, []);
 
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    window.location.href = '/login';
+  const handleCreateWorkspace = async (e) => {
+    e.preventDefault();
+    if (!newWorkspaceName.trim()) return;
+    await apiFetch('/api/workspaces', {
+      method: 'POST',
+      body: JSON.stringify({ name: newWorkspaceName })
+    });
+    setNewWorkspaceName('');
+    setIsCreating(false);
+    fetchWorkspaces();
   };
 
   return (
-    <div style={{
-      width: '80px', height: '100%', boxSizing: 'border-box', backgroundColor: '#0f172a', 
-      borderRight: '1px solid rgba(255, 255, 255, 0.1)', display: 'flex',
-      flexDirection: 'column', alignItems: 'center', padding: '1.5rem 0', position: 'relative'
-    }}>
-      
-      {/* Home / Logo */}
-      <div 
-        onClick={() => navigate('/')}
-        style={{
-          width: '50px', height: '50px', backgroundColor: '#c084fc', borderRadius: '12px',
-          display: 'flex', justifyContent: 'center', alignItems: 'center', color: 'white',
-          fontSize: '1.5rem', cursor: 'pointer', marginBottom: '1.5rem',
-          boxShadow: '0 4px 10px rgba(192, 132, 252, 0.4)'
-        }}
-      >🎙️</div>
+    <div className="flex flex-col w-64 p-6 border-r bg-background/40 backdrop-blur-xl z-10 shadow-[4px_0_30px_rgba(0,0,0,0.02)]">
+      <h2 className="flex items-center gap-2 mb-8 text-lg font-semibold tracking-tight text-foreground">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" className="text-primary drop-shadow-md" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 12c-2-2.67-4-4-6-4a4 4 0 1 0 0 8c2 0 4-1.33 6-4Zm0 0c2 2.67 4 4 6 4a4 4 0 1 0 0-8c-2 0-4 1.33-6 4Z"/>
+        </svg>
+        <span className="font-bold tracking-tight">SyncLoop</span>
+      </h2>
 
-      <div style={{ width: '40px', height: '2px', backgroundColor: 'rgba(255,255,255,0.1)', marginBottom: '1.5rem' }}></div>
-
-      {/* Workspace Servers */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '1rem', width: '100%', alignItems: 'center', overflowY: 'auto' }}>
-        {workspaces.map((ws) => {
-          const isActive = activeWorkspace && activeWorkspace._id === ws._id;
-          return (
-            <div 
-              key={ws._id}
-              onClick={() => setActiveWorkspace(ws)}
-              title={ws.name}
-              style={{
-                width: '50px', height: '50px', 
-                backgroundColor: isActive ? '#c084fc' : '#334155',
-                borderRadius: isActive ? '16px' : '50%',
-                display: 'flex', justifyContent: 'center', alignItems: 'center',
-                color: 'white', fontWeight: 'bold', fontSize: '1.2rem',
-                cursor: 'pointer', transition: 'all 0.2s ease',
-                border: isActive ? '2px solid white' : 'none'
-              }}
-            >
-              {ws.name.charAt(0).toUpperCase()}
-            </div>
-          );
-        })}
+      <div className="mb-8 space-y-1">
+        <NavLink to="/" className={`flex items-center gap-3 px-4 py-2 text-sm font-medium transition-colors rounded-lg ${location.pathname === '/' ? 'bg-accent text-primary shadow-sm' : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'}`}>
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+          Dashboard
+        </NavLink>
+        <NavLink to="/team" className={`flex items-center gap-3 px-4 py-2 text-sm font-medium transition-colors rounded-lg ${location.pathname === '/team' ? 'bg-accent text-primary shadow-sm' : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'}`}>
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+          Team Directory
+        </NavLink>
+        <NavLink to="/settings" className={`flex items-center gap-3 px-4 py-2 text-sm font-medium transition-colors rounded-lg ${location.pathname === '/settings' ? 'bg-accent text-primary shadow-sm' : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'}`}>
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+          Settings
+        </NavLink>
       </div>
 
-      {/* User Profile Avatar */}
-      <div 
-        onClick={(e) => {
-          e.stopPropagation(); // Stop click from hitting the document listener!
-          setShowProfile(!showProfile);
-        }}
-        style={{
-          width: '50px', height: '50px', backgroundColor: '#1e293b', borderRadius: '50%',
-          display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#cbd5e1',
-          fontWeight: 'bold', fontSize: '1.2rem', cursor: 'pointer', border: '2px solid rgba(255, 255, 255, 0.2)',
-          marginTop: 'auto'
-        }}
-        title="Profile Settings"
-      >
-        {initial}
-      </div>
-
-      {/* Profile Modal */}
-      {showProfile && (
-        <div 
-          onClick={(e) => e.stopPropagation()} // Stop clicks inside the modal from closing it
-          style={{
-            position: 'absolute', bottom: '20px', left: '90px', width: '250px',
-            backgroundColor: '#1e293b', borderRadius: '12px', padding: '1.5rem',
-            boxShadow: '0 10px 25px rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.1)',
-            zIndex: 100
-          }}
-        >
-          <h3 style={{ margin: '0 0 0.5rem 0', color: 'white' }}>{user.name}</h3>
-          <p style={{ margin: '0 0 1.5rem 0', color: '#94a3b8', fontSize: '0.9rem' }}>{user.email}</p>
-          <button 
-            onClick={handleLogout}
-            style={{ width: '100%', padding: '0.75rem', backgroundColor: '#ef4444', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}
-          >
-            Log Out
-          </button>
+      <div className="flex-1 overflow-y-auto">
+        <div className="flex items-center justify-between mb-4">
+            <p className="text-xs font-bold tracking-wider uppercase text-muted-foreground m-0">
+              Workspaces
+            </p>
+            <button onClick={() => setIsCreating(!isCreating)} className="p-1 text-muted-foreground transition-colors rounded-md hover:bg-destructive/10 hover:text-destructive">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            </button>
         </div>
-      )}
+
+        {isCreating && (
+          <form onSubmit={handleCreateWorkspace} className="mb-4">
+            <input 
+              autoFocus
+              type="text" 
+              placeholder="Workspace name..." 
+              className="w-full px-3 py-2 text-sm transition-all border rounded-md bg-background/50 backdrop-blur-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" 
+              value={newWorkspaceName} 
+              onChange={(e) => setNewWorkspaceName(e.target.value)} 
+            />
+          </form>
+        )}
+
+        <div className="space-y-1">
+            {workspaces.map(ws => (
+            <button 
+                key={ws._id}
+                className={`flex items-center w-full gap-3 px-4 py-2 text-sm font-medium transition-colors rounded-lg text-left ${activeWorkspace?._id === ws._id ? 'bg-accent text-primary shadow-sm' : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'}`}
+                onClick={() => setActiveWorkspace(ws)}
+            >
+                <span className="flex items-center justify-center w-6 h-6 text-xs font-bold rounded-md bg-background shadow-sm text-foreground">
+                    {ws.name.charAt(0).toUpperCase()}
+                </span>
+                {ws.name}
+            </button>
+            ))}
+        </div>
+      </div>
     </div>
   );
 }

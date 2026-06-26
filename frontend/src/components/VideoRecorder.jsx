@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react';
+import { apiFetch } from '../utils/api';
 
 function VideoRecorder({ meetingId }) {
   const liveVideoRef = useRef(null);
@@ -55,7 +56,7 @@ function VideoRecorder({ meetingId }) {
 
     try {
       console.log("Throwing video to backend...");
-      const response = await fetch('http://localhost:5000/api/replies', {
+      const response = await apiFetch('/api/replies', {
         method: 'POST',
         body: formData
       });

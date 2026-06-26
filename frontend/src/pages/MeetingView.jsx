@@ -1,8 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
+import { UsersIcon, LogoIcon } from '../components/ui/Icons';
+import VideoRecorder from '../components/meeting/VideoRecorder';
+import VideoThread from '../components/meeting/VideoThread';
+import SyncIntelligenceChat from '../components/meeting/SyncIntelligenceChat';
+import { apiFetch } from '../utils/api';
 
-function MeetingView() {
+export default function MeetingView({ isDarkMode, toggleDarkMode }) {
   const { id } = useParams();
   const navigate = useNavigate();
   const [meeting, setMeeting] = useState(null);
@@ -14,11 +19,18 @@ function MeetingView() {
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
   const [isChatting, setIsChatting] = useState(false);
-  const chatScrollRef = useRef(null);
 
   const [comments, setComments] = useState({}); 
   const [newCommentText, setNewCommentText] = useState({}); 
   const [activeReplyBox, setActiveReplyBox] = useState(null); 
+
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [confirmAction, setConfirmAction] = useState(null);
+  const [confirmMessage, setConfirmMessage] = useState("");
+  const [confirmButtonText, setConfirmButtonText] = useState("Confirm");
+
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [membersDropdownOpen, setMembersDropdownOpen] = useState(false);
 
   const mediaRecorderRef = useRef(null);
   const videoChunksRef = useRef([]);
@@ -27,67 +39,61 @@ function MeetingView() {
 
   const user = JSON.parse(localStorage.getItem('user') || '{}');
 
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    window.location.href = '/login';
+  };
+
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    
-    fetch(`http://localhost:5000/api/meetings/${id}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-    })
-      .then((res) => res.json())
+    apiFetch(`/api/meetings/${id}`)
+      .then((res) => res && res.ok ? res.json() : null)
       .then((data) => {
+        if (!data) return;
         setMeeting(data.meeting);
         setReplies(data.replies);
         setWorkspace(data.workspace);
 
         data.replies.forEach(reply => {
-            fetch(`http://localhost:5000/api/comments/${reply._id}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            })
-            .then(r => r.json())
+            apiFetch(`/api/comments/${reply._id}`)
+            .then(r => r && r.ok ? r.json() : null)
             .then(cData => {
-                setComments(prev => ({ ...prev, [reply._id]: cData }));
+                if(cData) setComments(prev => ({ ...prev, [reply._id]: cData }));
             });
         });
       });
 
-    const newSocket = io('http://localhost:5000');
+    const newSocket = io(import.meta.env.VITE_API_URL || 'http://localhost:5000', {
+        auth: { token: localStorage.getItem('token') }
+    });
     socketRef.current = newSocket;
     newSocket.emit('join_meeting', id);
 
-    newSocket.on('new_reply', (newReply) => {
-      setReplies((prev) => [newReply, ...prev]);
-    });
-
-    newSocket.on('reply_deleted', (deletedReplyId) => {
-      setReplies((prev) => prev.filter(r => r._id !== deletedReplyId));
-    });
-
-    newSocket.on('meeting_closed', (updatedMeeting) => {
-      setMeeting(updatedMeeting);
-    });
+    newSocket.on('new_reply', (newReply) => setReplies((prev) => [newReply, ...prev]));
+    newSocket.on('reply_deleted', (deletedReplyId) => setReplies((prev) => prev.filter(r => r._id !== deletedReplyId)));
+    newSocket.on('meeting_closed', (updatedMeeting) => setMeeting(updatedMeeting));
 
     newSocket.on('new_comment', (newComment) => {
-        setComments(prev => ({
-            ...prev,
-            [newComment.replyId]: [...(prev[newComment.replyId] || []), newComment]
-        }));
+        setComments(prev => ({ ...prev, [newComment.replyId]: [...(prev[newComment.replyId] || []), newComment] }));
+    });
+
+    newSocket.on('comment_deleted', (deletedCommentId) => {
+      setComments(prev => {
+         const newComments = { ...prev };
+         Object.keys(newComments).forEach(replyId => {
+             newComments[replyId] = newComments[replyId].filter(c => c._id !== deletedCommentId && c.parentCommentId !== deletedCommentId);
+         });
+         return newComments;
+      });
     });
 
     return () => newSocket.disconnect();
   }, [id]);
 
-  useEffect(() => {
-    if (chatScrollRef.current) {
-        chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
-    }
-  }, [chatMessages]);
-
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-      if (videoPreviewRef.current) {
-        videoPreviewRef.current.srcObject = stream;
-      }
+      if (videoPreviewRef.current) videoPreviewRef.current.srcObject = stream;
       
       const mediaRecorder = new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
@@ -100,9 +106,7 @@ function MeetingView() {
       mediaRecorder.onstop = handleUpload;
       mediaRecorder.start();
       setIsRecording(true);
-    } catch (err) {
-      console.error("Microphone/Camera permission denied", err);
-    }
+    } catch (err) { console.error("Permission denied", err); }
   };
 
   const stopRecording = () => {
@@ -110,8 +114,25 @@ function MeetingView() {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
       const stream = videoPreviewRef.current.srcObject;
-      const tracks = stream.getTracks();
-      tracks.forEach(track => track.stop());
+      if (stream) {
+          const tracks = stream.getTracks();
+          tracks.forEach(track => track.stop());
+      }
+    }
+  };
+
+  const cancelRecording = () => {
+    if (mediaRecorderRef.current) {
+      mediaRecorderRef.current.onstop = null; 
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      const stream = videoPreviewRef.current.srcObject;
+      if (stream) {
+          const tracks = stream.getTracks();
+          tracks.forEach(track => track.stop());
+      }
+      videoPreviewRef.current.srcObject = null;
+      videoChunksRef.current = [];
     }
   };
 
@@ -122,34 +143,38 @@ function MeetingView() {
     formData.append('video', videoBlob, 'reply.webm');
     formData.append('meetingId', id);
 
-    const token = localStorage.getItem('token');
-    await fetch('http://localhost:5000/api/replies', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}` },
-      body: formData,
-    });
-    
+    await apiFetch('/api/replies', { method: 'POST', body: formData });
     setIsUploading(false);
   };
 
-  const handleDeleteVideo = async (replyId) => {
-    if (!window.confirm("Are you sure you want to permanently delete this video?")) return;
-    
-    const token = localStorage.getItem('token');
-    await fetch(`http://localhost:5000/api/replies/${replyId}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
+  const handleDeleteVideo = (replyId) => {
+    setConfirmMessage("Are you sure you want to permanently delete this video? This cannot be undone.");
+    setConfirmButtonText("Delete Video");
+    setConfirmAction(() => async () => {
+        await apiFetch(`/api/replies/${replyId}`, { method: 'DELETE' });
+        setShowConfirmModal(false);
     });
+    setShowConfirmModal(true);
   };
 
-  const handleCloseMeeting = async () => {
-    if (!window.confirm("Are you sure? Once closed, no one can upload new videos!")) return;
-
-    const token = localStorage.getItem('token');
-    await fetch(`http://localhost:5000/api/meetings/${id}/close`, {
-        method: 'PUT',
-        headers: { 'Authorization': `Bearer ${token}` }
+  const handleCloseMeeting = () => {
+    setConfirmMessage("Are you sure you want to lock this meeting? Once closed, no one can upload new videos.");
+    setConfirmButtonText("Lock Meeting");
+    setConfirmAction(() => async () => {
+        await apiFetch(`/api/meetings/${id}/close`, { method: 'PUT' });
+        setShowConfirmModal(false);
     });
+    setShowConfirmModal(true);
+  };
+
+  const handleDeleteComment = (commentId) => {
+      setConfirmMessage("Delete this comment? Nested replies will also be removed.");
+      setConfirmButtonText("Delete Comment");
+      setConfirmAction(() => async () => {
+          await apiFetch(`/api/comments/${commentId}`, { method: 'DELETE' });
+          setShowConfirmModal(false);
+      });
+      setShowConfirmModal(true);
   };
 
   const handleSendMessage = async (e) => {
@@ -161,22 +186,13 @@ function MeetingView() {
     setChatInput('');
     setIsChatting(true); 
 
-    const token = localStorage.getItem('token');
-    const response = await fetch(`http://localhost:5000/api/meetings/${id}/chat`, {
+    const response = await apiFetch(`/api/meetings/${id}/chat`, {
         method: 'POST',
-        headers: { 
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}` 
-        },
         body: JSON.stringify({ message: userMessage.text })
     });
 
     const data = await response.json();
-    if (response.ok) {
-        setChatMessages((prev) => [...prev, { role: 'ai', text: data.answer }]);
-    } else {
-        setChatMessages((prev) => [...prev, { role: 'ai', text: `Error: ${data.error}` }]);
-    }
+    setChatMessages((prev) => [...prev, { role: 'ai', text: response.ok ? data.answer : `Error: ${data.error}` }]);
     setIsChatting(false);
   };
 
@@ -185,13 +201,8 @@ function MeetingView() {
       const text = newCommentText[textKey];
       if (!text || !text.trim()) return;
 
-      const token = localStorage.getItem('token');
-      await fetch('http://localhost:5000/api/comments', {
+      await apiFetch('/api/comments', {
           method: 'POST',
-          headers: { 
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${token}` 
-          },
           body: JSON.stringify({ replyId, text, parentCommentId })
       });
 
@@ -199,168 +210,180 @@ function MeetingView() {
       if (parentCommentId) setActiveReplyBox(null);
   };
 
-  if (!meeting) return <div className="app-container"><p>Loading Meeting...</p></div>;
+  if (!meeting) return <div className="flex items-center justify-center h-screen bg-background text-muted-foreground">Loading Meeting...</div>;
 
   return (
-    <div className="app-container">
-      <button onClick={() => navigate(-1)} className="btn-secondary" style={{ marginBottom: '1rem' }}>
-        ← Back to Dashboard
-      </button>
-
-      <div style={{ display: 'flex', gap: '2rem' }}>
+    <div className="flex flex-col min-h-screen overflow-y-auto bg-background text-foreground">
+      
+      {/* HEADER WITH BACK BUTTON AND PROFILE */}
+      <header className="sticky top-0 z-50 flex items-center justify-between px-12 py-4 border-b bg-background/80 backdrop-blur-md">
+        <div className="flex items-center flex-1">
+            <button onClick={() => navigate(-1)} className="flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors border rounded-md hover:bg-accent hover:text-accent-foreground text-muted-foreground">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
+              Back
+            </button>
+        </div>
         
-        <div style={{ flex: 2 }}>
-          <div className="glass-panel" style={{ marginBottom: '2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <div>
-              <h1 style={{ marginBottom: '0.5rem', color: '#c084fc' }}>{meeting.title}</h1>
-              <p style={{ fontSize: '1.2rem', color: '#cbd5e1', marginBottom: '1rem' }}>{meeting.agenda}</p>
-              <span className={meeting.status === 'Open' ? 'status-badge' : 'status-badge closed'}>
-                {meeting.status}
-              </span>
-            </div>
-            
-            {workspace && user.id === workspace.ownerId && meeting.status === 'Open' && (
-              <button onClick={handleCloseMeeting} className="btn-secondary" style={{ color: '#ef4444', borderColor: '#ef4444' }}>
-                🔒 Close Meeting
-              </button>
-            )}
-          </div>
-
-          <div className="replies-feed">
-            <h3>Video Thread</h3>
-            {replies.map((reply) => (
-              <div key={reply._id} className="reply-card">
-                
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                  <span className="date-text">{new Date(reply.createdAt).toLocaleString()}</span>
-                  {reply.userId === user.id && (
-                    <button onClick={() => handleDeleteVideo(reply._id)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.2rem' }} title="Delete Video">🗑️</button>
-                  )}
-                </div>
-
-                <video src={reply.videoUrl} controls style={{ width: '100%', borderRadius: '8px', marginBottom: '1rem' }} />
-                
-                <div className="ai-summary-box" style={{ marginBottom: '1rem' }}>
-                  <h4 style={{ color: '#10b981', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>✨ AI Summary</h4>
-                  <p>{reply.textContent}</p>
-                </div>
-
-                {/* THREADED COMMENTS UI */}
-                <div style={{ backgroundColor: '#0f172a', padding: '1rem', borderRadius: '8px' }}>
-                    <h4 style={{ fontSize: '0.9rem', color: '#94a3b8', marginBottom: '0.5rem' }}>Discussion</h4>
-                    
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1rem' }}>
-                        {(comments[reply._id] || []).filter(c => !c.parentCommentId).map(comment => (
-                            <div key={comment._id} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                                
-                                {/* THE UPDATED PARENT COMMENT WITH CSS FIX */}
-                                <div style={{ backgroundColor: '#1e293b', padding: '0.5rem 0.75rem', borderRadius: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <div>
-                                        <strong style={{ color: '#c084fc', fontSize: '0.85rem' }}>{comment.userName}: </strong>
-                                        <span style={{ fontSize: '0.9rem', color: '#e2e8f0' }}>{comment.text}</span>
-                                    </div>
-                                    <button 
-                                        onClick={() => setActiveReplyBox(activeReplyBox === comment._id ? null : comment._id)}
-                                        style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: '0.75rem', cursor: 'pointer', padding: '0.25rem 0.5rem', borderRadius: '4px' }}
-                                        onMouseOver={(e) => e.target.style.color = '#c084fc'}
-                                        onMouseOut={(e) => e.target.style.color = '#94a3b8'}
-                                    >
-                                        Reply
-                                    </button>
-                                </div>
-
-                                {(comments[reply._id] || []).filter(c => c.parentCommentId === comment._id).map(nestedReply => (
-                                    <div key={nestedReply._id} style={{ backgroundColor: '#1e293b', padding: '0.5rem 0.75rem', borderRadius: '6px', marginLeft: '2rem', borderLeft: '2px solid #334155' }}>
-                                        <strong style={{ color: '#10b981', fontSize: '0.85rem' }}>{nestedReply.userName}: </strong>
-                                        <span style={{ fontSize: '0.9rem', color: '#e2e8f0' }}>{nestedReply.text}</span>
-                                    </div>
-                                ))}
-
-                                {activeReplyBox === comment._id && (
-                                    <div style={{ display: 'flex', gap: '0.5rem', marginLeft: '2rem', marginTop: '0.25rem' }}>
-                                        <input 
-                                            type="text" 
-                                            className="glass-input" 
-                                            placeholder={`Reply to ${comment.userName}...`} 
-                                            style={{ flex: 1, padding: '0.4rem', fontSize: '0.85rem', margin: 0 }}
-                                            value={newCommentText[comment._id] || ''}
-                                            onChange={(e) => setNewCommentText(prev => ({ ...prev, [comment._id]: e.target.value }))}
-                                            onKeyDown={(e) => { if (e.key === 'Enter') handlePostComment(reply._id, comment._id); }}
-                                        />
-                                        <button className="btn-primary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }} onClick={() => handlePostComment(reply._id, comment._id)}>
-                                            Send
-                                        </button>
-                                    </div>
-                                )}
-                            </div>
-                        ))}
-                    </div>
-
-                    <div style={{ display: 'flex', gap: '0.5rem' }}>
-                        <input 
-                            type="text" 
-                            className="glass-input" 
-                            placeholder="Write a comment..." 
-                            style={{ flex: 1, padding: '0.5rem', fontSize: '0.9rem', margin: 0 }}
-                            value={newCommentText[reply._id] || ''}
-                            onChange={(e) => setNewCommentText(prev => ({ ...prev, [reply._id]: e.target.value }))}
-                            onKeyDown={(e) => { if (e.key === 'Enter') handlePostComment(reply._id, null); }}
-                        />
-                        <button className="btn-primary" style={{ padding: '0.5rem 1rem', fontSize: '0.9rem' }} onClick={() => handlePostComment(reply._id, null)}>
-                            Comment
-                        </button>
-                    </div>
-                </div>
-
-              </div>
-            ))}
-            {replies.length === 0 && <p style={{ color: '#94a3b8' }}>No replies yet. Be the first to speak!</p>}
-          </div>
+        <div className="flex items-center flex-1 gap-3 cursor-pointer" onClick={() => navigate('/')}>
+            <LogoIcon className="text-primary drop-shadow-md" />
+            <span className="text-2xl font-black tracking-tighter">SyncLoop</span>
         </div>
 
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-          {meeting.status === 'Open' ? (
-            <div className="glass-panel" style={{ position: 'sticky', top: '2rem' }}>
-              <h3 style={{ marginBottom: '1rem' }}>Record a Reply</h3>
-              <div className="video-preview-container" style={{ marginBottom: '1rem', background: '#0f172a', borderRadius: '8px', overflow: 'hidden' }}>
-                <video ref={videoPreviewRef} autoPlay muted style={{ width: '100%', display: isRecording ? 'block' : 'none' }} />
-                {!isRecording && <div style={{ padding: '3rem', textAlign: 'center', color: '#64748b' }}>Camera Off</div>}
-              </div>
-              {isUploading ? (
-                <button className="btn-primary" disabled style={{ width: '100%', opacity: 0.7 }}>⏳ AI is analyzing video...</button>
-              ) : isRecording ? (
-                <button onClick={stopRecording} className="btn-primary" style={{ width: '100%', backgroundColor: '#ef4444' }}>⏹ Stop & Upload</button>
-              ) : (
-                <button onClick={startRecording} className="btn-primary" style={{ width: '100%' }}>▶️ Start Camera</button>
-              )}
-            </div>
-          ) : (
-             <div className="glass-panel" style={{ position: 'sticky', top: '2rem', textAlign: 'center' }}>
-                <h3 style={{ color: '#ef4444' }}>Meeting Closed</h3>
-                <p style={{ color: '#94a3b8' }}>No further videos can be added to this thread.</p>
-             </div>
-          )}
-
-          <div className="glass-panel ai-summary-sidebar" style={{ display: 'flex', flexDirection: 'column', height: '400px', position: 'sticky', top: meeting.status === 'Open' ? '30rem' : '15rem' }}>
-            <h3 style={{ marginBottom: '1rem', color: '#10b981', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>✨ Meeting Chatbot</h3>
-            <div ref={chatScrollRef} style={{ flex: 1, overflowY: 'auto', marginBottom: '1rem', display: 'flex', flexDirection: 'column', gap: '1rem', paddingRight: '0.5rem' }}>
-              {chatMessages.map((msg, idx) => (
-                <div key={idx} style={{ alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start', backgroundColor: msg.role === 'user' ? '#c084fc' : '#1e293b', padding: '0.75rem 1rem', borderRadius: '12px', maxWidth: '85%', color: 'white', border: msg.role === 'ai' ? '1px solid rgba(255,255,255,0.1)' : 'none' }}>
-                  <p style={{ margin: 0, fontSize: '0.9rem', lineHeight: '1.4' }}>{msg.text}</p>
+        <div className="flex items-center justify-end flex-1 gap-6">
+            <button 
+                onClick={toggleDarkMode} 
+                className="relative flex items-center justify-center w-10 h-10 transition-all rounded-full bg-white/50 border border-black/5 hover:bg-white dark:bg-black/50 dark:border-white/10 dark:hover:bg-black/80 shadow-sm hover:shadow hover:scale-105 active:scale-95" 
+                title="Toggle Dark Mode" 
+            >
+                {isDarkMode ? (
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-yellow-400 drop-shadow-sm"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m6.34 17.66-1.41 1.41"></path><path d="m19.07 4.93-1.41 1.41"></path></svg>
+                ) : (
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-slate-600 drop-shadow-sm"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path></svg>
+                )}
+            </button>
+            <div className="relative">
+                <div className="flex items-center justify-center w-8 h-8 text-sm font-medium cursor-pointer bg-primary text-primary-foreground rounded-full" onClick={() => setDropdownOpen(!dropdownOpen)}>
+                    {user.name ? user.name.charAt(0).toUpperCase() : 'V'}
                 </div>
-              ))}
-              {chatMessages.length === 0 && <p style={{ color: '#94a3b8', textAlign: 'center', marginTop: '2rem', fontSize: '0.9rem' }}>Ask me anything about this meeting!</p>}
-              {isChatting && <div style={{ alignSelf: 'flex-start', backgroundColor: '#1e293b', padding: '0.75rem 1rem', borderRadius: '12px', color: '#94a3b8', fontSize: '0.9rem' }}>Thinking...</div>}
+                {dropdownOpen && (
+                    <div className="absolute right-0 z-50 p-2 mt-2 border shadow-lg rounded-xl w-48 bg-popover text-popover-foreground animate-in fade-in slide-in-from-top-2">
+                        <div className="px-4 py-2 mb-2 border-b">
+                            <p className="text-sm font-bold">{user.name}</p>
+                            <p className="text-xs text-muted-foreground">{user.email}</p>
+                        </div>
+                        <button className="w-full px-4 py-2 text-left text-sm transition-colors rounded-md hover:bg-accent" onClick={() => { setDropdownOpen(false); navigate('/settings'); }}>Account Settings</button>
+                        <button className="w-full px-4 py-2 text-left text-sm transition-colors rounded-md hover:bg-accent" onClick={() => { setDropdownOpen(false); navigate('/settings'); }}>Workspace Preferences</button>
+                        <div className="my-1 border-t"></div>
+                        <button className="w-full px-4 py-2 text-left text-sm text-destructive transition-colors rounded-md hover:bg-destructive/10" onClick={handleLogout}>Log Out</button>
+                    </div>
+                )}
             </div>
-            <form onSubmit={handleSendMessage} style={{ display: 'flex', gap: '0.5rem' }}>
-              <input type="text" value={chatInput} onChange={(e) => setChatInput(e.target.value)} placeholder="Ask a question..." className="glass-input" style={{ flex: 1, padding: '0.5rem', margin: 0 }} disabled={isChatting} />
-              <button type="submit" className="btn-primary" style={{ padding: '0.5rem 1rem' }} disabled={isChatting}>Send</button>
-            </form>
+        </div>
+      </header>
+
+      <div className="flex-1 w-full px-16 py-12">
+        <div className="flex gap-8">
+          
+          {/* LEFT COLUMN: VIDEOS & THREADS */}
+          <div className="flex-[2]">
+            <div className="flex items-start justify-between p-8 mb-8 border bg-card text-card-foreground rounded-2xl shadow-sm">
+              <div>
+                <h1 className="mb-2 text-2xl font-bold tracking-tight text-primary">{meeting.title}</h1>
+                <p className="mb-4 text-lg text-muted-foreground">{meeting.agenda}</p>
+                <div className="flex flex-wrap items-center gap-4">
+                    <span className={`inline-flex items-center px-2.5 py-0.5 text-xs font-semibold transition-colors border border-transparent rounded-full ${meeting.status === 'Open' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' : 'bg-secondary text-secondary-foreground'}`}>{meeting.status}</span>
+                    {workspace && workspace.members && (
+                        <div className="relative">
+                            <button 
+                                onClick={() => setMembersDropdownOpen(!membersDropdownOpen)}
+                                className="flex items-center gap-2 px-4 py-1.5 text-sm font-medium transition-colors border bg-background rounded-full hover:bg-accent" 
+                            >
+                                <UsersIcon />
+                                {workspace.members.length} {workspace.members.length === 1 ? 'Member' : 'Members'}
+                            </button>
+                            
+                            {membersDropdownOpen && (
+                                <div className="absolute left-0 z-50 w-56 p-2 mt-2 overflow-y-auto border shadow-lg max-h-72 rounded-xl bg-popover text-popover-foreground animate-in fade-in slide-in-from-top-2">
+                                    <div className="px-4 py-2 mb-2 border-b">
+                                        <p className="text-sm font-bold">Team Members</p>
+                                    </div>
+                                    {workspace.members.map((member) => (
+                                        <div key={member._id} className="flex items-center gap-3 px-4 py-2">
+                                            <div className="flex items-center justify-center flex-shrink-0 w-8 h-8 text-xs font-bold rounded-full bg-primary text-primary-foreground">
+                                                {member.name ? member.name.charAt(0).toUpperCase() : 'U'}
+                                            </div>
+                                            <div className="overflow-hidden">
+                                                <div className="text-sm font-medium truncate">{member.name || 'User'}</div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+              </div>
+              
+              <div className="flex gap-4">
+                <button onClick={() => { navigator.clipboard.writeText(window.location.href); alert('Meeting link copied to clipboard!'); }} className="flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors border rounded-md border-primary text-primary hover:bg-primary/10">
+                  📋 Copy Link
+                </button>
+                {workspace && user.id === workspace.ownerId && meeting.status === 'Open' && (
+                  <button onClick={handleCloseMeeting} className="flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors border rounded-md text-destructive border-destructive hover:bg-destructive/10">
+                    🔒 Close Meeting
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <VideoThread 
+                replies={replies}
+                comments={comments}
+                user={user}
+                handleDeleteVideo={handleDeleteVideo}
+                handleDeleteComment={handleDeleteComment}
+                activeReplyBox={activeReplyBox}
+                setActiveReplyBox={setActiveReplyBox}
+                newCommentText={newCommentText}
+                setNewCommentText={setNewCommentText}
+                handlePostComment={handlePostComment}
+            />
+
+          </div>
+
+          {/* RIGHT COLUMN: RECORDING & CHAT */}
+          <div className="flex flex-col flex-1 gap-8 sticky top-24 h-fit">
+            
+            <VideoRecorder 
+                meetingStatus={meeting.status}
+                videoPreviewRef={videoPreviewRef}
+                isRecording={isRecording}
+                isUploading={isUploading}
+                cancelRecording={cancelRecording}
+                stopRecording={stopRecording}
+                startRecording={startRecording}
+            />
+
+            <SyncIntelligenceChat 
+                chatMessages={chatMessages}
+                chatInput={chatInput}
+                setChatInput={setChatInput}
+                handleSendMessage={handleSendMessage}
+                isChatting={isChatting}
+            />
+
           </div>
         </div>
       </div>
+
+      {/* PRO FOOTER */}
+      <footer className="px-12 py-12 mt-auto border-t bg-muted/20">
+        <div className="flex flex-col items-center justify-between gap-6 mx-auto md:flex-row max-w-7xl">
+          <div className="flex items-center gap-2">
+            <LogoIcon className="text-muted-foreground w-6 h-6" />
+            <span className="font-semibold text-muted-foreground">SyncLoop</span>
+          </div>
+          <div className="flex gap-6 text-sm text-muted-foreground">
+            <p>Built by Vineet Kumar</p>
+            <a href="mailto:vineet765245@gmail.com" className="transition-colors hover:text-primary">Contact Support</a>
+            <a href="https://github.com/vineet765245" target="_blank" rel="noreferrer" className="transition-colors hover:text-primary">GitHub</a>
+          </div>
+        </div>
+      </footer>
+
+      {/* CONFIRM MODAL */}
+      {showConfirmModal && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in">
+          <div className="w-[400px] p-8 text-center border bg-background rounded-2xl shadow-lg animate-in zoom-in-95">
+            <h2 className="mb-4 text-2xl font-bold tracking-tight text-foreground">Are you sure?</h2>
+            <p className="mb-8 text-muted-foreground">{confirmMessage}</p>
+            <div className="flex gap-4 justify-center">
+                <button onClick={() => setShowConfirmModal(false)} className="flex-1 inline-flex items-center justify-center h-10 px-4 py-2 text-sm font-medium transition-colors border rounded-md border-input bg-background hover:bg-accent hover:text-accent-foreground">Cancel</button>
+                <button onClick={confirmAction} className="flex-1 inline-flex items-center justify-center h-10 px-4 py-2 text-sm font-medium transition-colors rounded-md shadow bg-destructive text-destructive-foreground hover:bg-destructive/90">{confirmButtonText}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-
-export default MeetingView;

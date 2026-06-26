@@ -1,56 +1,87 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Dashboard from './pages/Dashboard';
 import MeetingView from './pages/MeetingView';
 import LoginView from './pages/LoginView';
-import Sidebar from './components/Sidebar';
+import TeamView from './pages/TeamView';
+import SettingsView from './pages/SettingsView';
+import LandingView from './pages/LandingView';
+import ProtectedLayout from './components/layout/ProtectedLayout';
 import './index.css';
-
-function ProtectedLayout({ children, activeWorkspace, setActiveWorkspace }) {
-  return (
-    <div style={{ display: 'flex', height: '100vh', width: '100vw', overflow: 'hidden' }}>
-      {/* We hand the Sidebar the ability to change the active workspace */}
-      <Sidebar activeWorkspace={activeWorkspace} setActiveWorkspace={setActiveWorkspace} />
-      <div style={{ flex: 1, overflowY: 'auto' }}>
-        {children}
-      </div>
-    </div>
-  );
-}
 
 function App() {
   const isAuthenticated = !!localStorage.getItem('token');
-  
-  // This is the Global State that connects the Sidebar and the Dashboard!
   const [activeWorkspace, setActiveWorkspace] = useState(null);
+  
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+      return localStorage.getItem('darkMode') === 'true';
+  });
+
+  useEffect(() => {
+      if (isDarkMode) {
+          document.documentElement.setAttribute('data-theme', 'dark');
+          localStorage.setItem('darkMode', 'true');
+      } else {
+          document.documentElement.removeAttribute('data-theme');
+          localStorage.setItem('darkMode', 'false');
+      }
+  }, [isDarkMode]);
+
+  const toggleDarkMode = () => setIsDarkMode(prev => !prev);
 
   return (
     <Router>
       <Routes>
-        <Route path="/login" element={isAuthenticated ? <Navigate to="/" /> : <LoginView />} />
+        <Route path="/login" element={isAuthenticated ? <Navigate to="/dashboard" /> : <LoginView />} />
         
         <Route 
           path="/" 
+          element={ isAuthenticated ? <Navigate to="/dashboard" /> : <LandingView /> } 
+        />
+
+        <Route 
+          path="/dashboard" 
           element={
             isAuthenticated ? 
-            <ProtectedLayout activeWorkspace={activeWorkspace} setActiveWorkspace={setActiveWorkspace}>
-              {/* The Dashboard needs to know what Workspace to fetch meetings for! */}
-              <Dashboard activeWorkspace={activeWorkspace} />
+            <ProtectedLayout activeWorkspace={activeWorkspace} setActiveWorkspace={setActiveWorkspace} isDarkMode={isDarkMode} toggleDarkMode={toggleDarkMode}>
+              <Dashboard activeWorkspace={activeWorkspace} setActiveWorkspace={setActiveWorkspace} />
             </ProtectedLayout> 
             : <Navigate to="/login" />
           } 
         />
         
         <Route 
-          path="/meeting/:id" 
+          path="/team" 
           element={
             isAuthenticated ? 
-            <ProtectedLayout activeWorkspace={activeWorkspace} setActiveWorkspace={setActiveWorkspace}>
-              <MeetingView />
+            <ProtectedLayout activeWorkspace={activeWorkspace} setActiveWorkspace={setActiveWorkspace} isDarkMode={isDarkMode} toggleDarkMode={toggleDarkMode}>
+              <TeamView activeWorkspace={activeWorkspace} />
             </ProtectedLayout> 
             : <Navigate to="/login" />
           } 
         />
+
+        <Route 
+          path="/settings" 
+          element={
+            isAuthenticated ? 
+            <ProtectedLayout activeWorkspace={activeWorkspace} setActiveWorkspace={setActiveWorkspace} isDarkMode={isDarkMode} toggleDarkMode={toggleDarkMode}>
+              <SettingsView />
+            </ProtectedLayout> 
+            : <Navigate to="/login" />
+          } 
+        />
+
+        <Route 
+          path="/meetings/:id" 
+          element={
+            isAuthenticated ? 
+            <MeetingView isDarkMode={isDarkMode} toggleDarkMode={toggleDarkMode} /> 
+            : <Navigate to="/login" />
+          } 
+        />
+
+        <Route path="*" element={<Navigate to="/" />} />
       </Routes>
     </Router>
   );

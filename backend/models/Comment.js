@@ -4,7 +4,8 @@ const commentSchema = new mongoose.Schema({
     replyId: { 
         type: mongoose.Schema.Types.ObjectId, 
         ref: 'Reply',
-        required: true 
+        required: true,
+        index: true 
     },
     userId: {
         type: mongoose.Schema.Types.ObjectId,
@@ -17,13 +18,16 @@ const commentSchema = new mongoose.Schema({
     },
     text: { 
         type: String, 
-        required: true 
+        required: true,
+        trim: true,
+        maxlength: 1000
     },
     // NEW: If this is a reply, it points to the original comment!
     parentCommentId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Comment',
-        default: null
+        default: null,
+        index: true
     },
     createdAt: { 
         type: Date, 
