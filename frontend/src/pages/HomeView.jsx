@@ -61,6 +61,12 @@ function HomeView({ activeWorkspace }) {
 
   const activeInvites = activeWorkspace?.pendingInvites || [];
 
+  const getWorkspaceDisplayName = () => {
+      if (!activeWorkspace) return 'your team';
+      if (user.name && activeWorkspace.name === `${user.name}'s Workspace`) return 'your workspace';
+      return activeWorkspace.name;
+  };
+
   return (
     <div className="flex flex-col min-h-screen bg-background text-foreground overflow-x-hidden">
       
@@ -76,7 +82,7 @@ function HomeView({ activeWorkspace }) {
                 Good morning, {user.name?.split(' ')[0] || 'there'}.
               </h1>
               <p className="text-xl text-muted-foreground mb-12 max-w-xl">
-                Ready to sync with <span className="font-semibold text-foreground">{activeWorkspace?.name || 'your team'}</span>? Start a new thread below.
+                Ready to sync with <span className="font-semibold text-foreground">{getWorkspaceDisplayName()}</span>? Start a new thread below.
               </p>
 
               {/* CENTERED FLOATING COMPOSER */}
