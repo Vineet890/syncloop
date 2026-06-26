@@ -19,6 +19,11 @@ const meetingSchema = new mongoose.Schema({
         required: true,
         index: true 
     },
+    allowedUsers: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        index: true
+    }],
     status: { 
         type: String, 
         enum: ['Open', 'Closed'], 

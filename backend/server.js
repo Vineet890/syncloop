@@ -20,6 +20,7 @@ const replyRoutes = require('./routes/replyRoutes');
 const commentRoutes = require('./routes/commentRoutes');
 const searchRoutes = require('./routes/searchRoutes');
 const analyticsRoutes = require('./routes/analyticsRoutes');
+const notificationRoutes = require('./routes/notificationRoutes');
 
 const app = express();
 const server = http.createServer(app);
@@ -98,6 +99,7 @@ io.on('connection', (socket) => {
 // API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/user', userRoutes);
+app.use('/api/notifications', notificationRoutes);
 app.use('/api/workspaces', workspaceRoutes);
 app.use('/api/meetings', meetingRoutes);
 app.use('/api/replies', replyRoutes);

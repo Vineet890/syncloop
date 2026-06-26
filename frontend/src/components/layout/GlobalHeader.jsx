@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { SunIcon, MoonIcon } from '../ui/Icons';
+import NotificationBell from '../ui/NotificationBell';
 
 export default function GlobalHeader({ isDarkMode, toggleDarkMode, isOnline }) {
     const user = JSON.parse(localStorage.getItem('user') || '{}');
@@ -28,6 +29,7 @@ export default function GlobalHeader({ isDarkMode, toggleDarkMode, isOnline }) {
             </div>
 
             <div className="flex items-center gap-6">
+                <NotificationBell />
                 <button 
                     onClick={toggleDarkMode} 
                     className="relative flex items-center justify-center w-10 h-10 transition-all rounded-full bg-white/50 border border-black/5 hover:bg-white dark:bg-black/50 dark:border-white/10 dark:hover:bg-black/80 shadow-sm hover:shadow hover:scale-105 active:scale-95" 

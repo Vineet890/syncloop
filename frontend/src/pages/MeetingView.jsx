@@ -5,6 +5,7 @@ import { UsersIcon, LogoIcon } from '../components/ui/Icons';
 import VideoRecorder from '../components/meeting/VideoRecorder';
 import VideoThread from '../components/meeting/VideoThread';
 import SyncIntelligenceChat from '../components/meeting/SyncIntelligenceChat';
+import NotificationBell from '../components/ui/NotificationBell';
 import { apiFetch } from '../utils/api';
 
 export default function MeetingView({ isDarkMode, toggleDarkMode }) {
@@ -31,6 +32,7 @@ export default function MeetingView({ isDarkMode, toggleDarkMode }) {
 
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [membersDropdownOpen, setMembersDropdownOpen] = useState(false);
+  const [isAccessModalOpen, setIsAccessModalOpen] = useState(false);
 
   const mediaRecorderRef = useRef(null);
   const videoChunksRef = useRef([]);
@@ -45,9 +47,19 @@ export default function MeetingView({ isDarkMode, toggleDarkMode }) {
     window.location.href = '/login';
   };
 
+  const [meetingError, setMeetingError] = useState(null);
+
   useEffect(() => {
     apiFetch(`/api/meetings/${id}`)
-      .then((res) => res && res.ok ? res.json() : null)
+      .then(async (res) => {
+        if (!res) return null;
+        if (res.status === 403) {
+            const errData = await res.json();
+            setMeetingError(errData.error);
+            return null;
+        }
+        return res.ok ? res.json() : null;
+      })
       .then((data) => {
         if (!data) return;
         setMeeting(data.meeting);
@@ -99,21 +111,28 @@ export default function MeetingView({ isDarkMode, toggleDarkMode }) {
       mediaRecorderRef.current = mediaRecorder;
       videoChunksRef.current = [];
 
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) videoChunksRef.current.push(event.data);
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) videoChunksRef.current.push(e.data);
       };
 
-      mediaRecorder.onstop = handleUpload;
+      mediaRecorder.onstop = async () => {
+        const videoBlob = new Blob(videoChunksRef.current, { type: 'video/webm' });
+        await uploadVideo(videoBlob);
+      };
+
       mediaRecorder.start();
       setIsRecording(true);
-    } catch (err) { console.error("Permission denied", err); }
+    } catch (err) {
+      console.error("Camera access denied", err);
+      alert("Microphone & Camera access is required!");
+    }
   };
 
   const stopRecording = () => {
-    if (mediaRecorderRef.current) {
+    if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
-      const stream = videoPreviewRef.current.srcObject;
+      const stream = videoPreviewRef.current?.srcObject;
       if (stream) {
           const tracks = stream.getTracks();
           tracks.forEach(track => track.stop());
@@ -126,7 +145,7 @@ export default function MeetingView({ isDarkMode, toggleDarkMode }) {
       mediaRecorderRef.current.onstop = null; 
       mediaRecorderRef.current.stop();
       setIsRecording(false);
-      const stream = videoPreviewRef.current.srcObject;
+      const stream = videoPreviewRef.current?.srcObject;
       if (stream) {
           const tracks = stream.getTracks();
           tracks.forEach(track => track.stop());
@@ -230,13 +249,16 @@ export default function MeetingView({ isDarkMode, toggleDarkMode }) {
         </div>
 
         <div className="flex items-center justify-end flex-1 gap-4">
-            <button 
-                onClick={() => navigate('/team')}
-                className="hidden sm:flex items-center gap-2 px-3 py-1.5 text-sm font-medium transition-colors rounded-full bg-primary/10 text-primary hover:bg-primary/20"
-            >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
-                Invite
-            </button>
+            {workspace && workspace.ownerId === user.userId && (
+              <button 
+                  onClick={() => setIsAccessModalOpen(true)}
+                  className="hidden sm:flex items-center gap-2 px-3 py-1.5 text-sm font-medium transition-colors rounded-full bg-primary/10 text-primary hover:bg-primary/20"
+              >
+                  <UsersIcon className="w-4 h-4" />
+                  Manage Access
+              </button>
+            )}
+            <NotificationBell />
             <button 
                 onClick={toggleDarkMode} 
                 className="relative flex items-center justify-center w-10 h-10 transition-all rounded-full bg-white/50 border border-black/5 hover:bg-white dark:bg-black/50 dark:border-white/10 dark:hover:bg-black/80 shadow-sm hover:shadow hover:scale-105 active:scale-95" 
@@ -380,17 +402,66 @@ export default function MeetingView({ isDarkMode, toggleDarkMode }) {
 
       {/* CONFIRM MODAL */}
       {showConfirmModal && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in">
-          <div className="w-[400px] p-8 text-center border bg-background rounded-2xl shadow-lg animate-in zoom-in-95">
-            <h2 className="mb-4 text-2xl font-bold tracking-tight text-foreground">Are you sure?</h2>
-            <p className="mb-8 text-muted-foreground">{confirmMessage}</p>
-            <div className="flex gap-4 justify-center">
-                <button onClick={() => setShowConfirmModal(false)} className="flex-1 inline-flex items-center justify-center h-10 px-4 py-2 text-sm font-medium transition-colors border rounded-md border-input bg-background hover:bg-accent hover:text-accent-foreground">Cancel</button>
-                <button onClick={confirmAction} className="flex-1 inline-flex items-center justify-center h-10 px-4 py-2 text-sm font-medium transition-colors rounded-md shadow bg-destructive text-destructive-foreground hover:bg-destructive/90">{confirmButtonText}</button>
-            </div>
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+              <div className="w-full max-w-md p-6 shadow-2xl bg-background rounded-2xl animate-in zoom-in-95">
+                  <h3 className="mb-2 text-xl font-bold tracking-tight">Are you sure?</h3>
+                  <p className="mb-6 text-muted-foreground">{confirmMessage}</p>
+                  <div className="flex justify-end gap-3">
+                      <button onClick={() => setShowConfirmModal(false)} className="px-4 py-2 text-sm font-medium transition-colors border rounded-md hover:bg-accent hover:text-accent-foreground">Cancel</button>
+                      <button onClick={confirmAction} className="px-4 py-2 text-sm font-medium text-white transition-colors bg-red-600 rounded-md hover:bg-red-700">{confirmButtonText}</button>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* MANAGE ACCESS MODAL */}
+      {isAccessModalOpen && workspace && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md p-6 shadow-2xl bg-background rounded-2xl animate-in zoom-in-95">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-xl font-bold tracking-tight">Manage Thread Access</h3>
+                <button onClick={() => setIsAccessModalOpen(false)} className="text-muted-foreground hover:text-foreground">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                </button>
+              </div>
+              <p className="mb-6 text-sm text-muted-foreground">Select team members to add to this discussion.</p>
+              
+              <div className="space-y-3 max-h-64 overflow-y-auto pr-2">
+                {workspace.members.filter(m => m._id !== user.userId).length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No other members in this workspace yet.</p>
+                ) : (
+                  workspace.members.filter(m => m._id !== user.userId).map(member => {
+                    const isAllowed = meeting?.allowedUsers?.includes(member._id);
+                    return (
+                      <div key={member._id} className="flex items-center justify-between p-3 border rounded-lg">
+                        <div>
+                          <p className="font-medium text-sm">{member.name || member.email}</p>
+                          <p className="text-xs text-muted-foreground">{member.email}</p>
+                        </div>
+                        <button 
+                          onClick={async () => {
+                            if (isAllowed) return;
+                            await apiFetch(`/api/meetings/${id}/add-user`, {
+                              method: 'POST',
+                              body: JSON.stringify({ userId: member._id })
+                            });
+                            // optimistically update
+                            setMeeting(prev => ({ ...prev, allowedUsers: [...(prev.allowedUsers || []), member._id] }));
+                          }}
+                          disabled={isAllowed}
+                          className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${isAllowed ? 'bg-muted text-muted-foreground cursor-not-allowed' : 'bg-primary text-primary-foreground hover:bg-primary/90'}`}
+                        >
+                          {isAllowed ? 'Added' : 'Add'}
+                        </button>
+                      </div>
+                    )
+                  })
+                )}
+              </div>
           </div>
         </div>
       )}
+
     </div>
   );
 }

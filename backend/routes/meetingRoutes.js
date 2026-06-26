@@ -26,7 +26,12 @@ router.post('/', authenticateToken, async (req, res) => {
             return res.status(403).json({ error: "Only the workspace owner can create meetings." });
         }
 
-        const newMeeting = new Meeting({ title, agenda, workspaceId });
+        const newMeeting = new Meeting({ 
+            title, 
+            agenda, 
+            workspaceId,
+            allowedUsers: [req.user.userId]
+        });
         await newMeeting.save();
         res.status(201).json(newMeeting);
     } catch (error) {
@@ -62,9 +67,9 @@ router.get('/:id', authenticateToken, async (req, res) => {
         const workspace = await Workspace.findById(meeting.workspaceId).populate('members', 'name email');
         if (!workspace) return res.status(404).json({ error: "Workspace not found" });
 
-        const isMember = workspace.members.some(member => member._id.toString() === req.user.userId);
-        if (!isMember) {
-            return res.status(403).json({ error: "You do not have access to this meeting." });
+        const isAllowed = meeting.allowedUsers.some(userId => userId.toString() === req.user.userId);
+        if (!isAllowed) {
+            return res.status(403).json({ error: "Access Denied: You must be invited by the creator to view this thread." });
         }
 
         const replies = await Reply.find({ meetingId: req.params.id }).sort({ createdAt: -1 });
@@ -133,6 +138,39 @@ router.post('/:id/chat', authenticateToken, async (req, res) => {
         res.status(200).json({ answer: chatCompletion.choices[0].message.content });
     } catch (error) {
         res.status(500).json({ error: "Failed to chat with meeting AI" });
+    }
+});
+
+router.post('/:id/add-user', authenticateToken, async (req, res) => {
+    try {
+        const { userId } = req.body;
+        const meeting = await Meeting.findById(req.params.id);
+        if (!meeting) return res.status(404).json({ error: "Meeting not found" });
+
+        const workspace = await Workspace.findById(meeting.workspaceId);
+        if (workspace.ownerId.toString() !== req.user.userId && !meeting.allowedUsers.includes(req.user.userId)) {
+            return res.status(403).json({ error: "Only members of this meeting can invite others." });
+        }
+
+        if (meeting.allowedUsers.includes(userId)) {
+            return res.status(400).json({ error: "User is already in this meeting." });
+        }
+
+        meeting.allowedUsers.push(userId);
+        await meeting.save();
+
+        const Notification = require('../models/Notification');
+        await Notification.create({
+            userId,
+            type: 'meeting_invite',
+            title: 'Added to Thread',
+            message: `You were added to the discussion: ${meeting.title}`,
+            linkId: meeting._id
+        });
+
+        res.status(200).json({ message: "User added to meeting successfully" });
+    } catch (error) {
+        res.status(500).json({ error: "Failed to add user to meeting" });
     }
 });
 

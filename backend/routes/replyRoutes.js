@@ -107,18 +107,38 @@ router.post('/', authenticateToken, upload.single('video'), async (req, res) => 
                 const workspace = await Workspace.findById(meeting.workspaceId);
                 if (workspace) {
                     const uploader = await User.findById(req.user.userId);
-                    const teammates = await User.find({
-                        _id: { $in: workspace.members, $ne: req.user.userId }
-                    });
                     
-                    if (teammates.length > 0) {
-                        const targetEmails = teammates.map(u => u.email);
+                    const Notification = require('../models/Notification');
+                    const notificationsToCreate = [];
+                    const targetEmails = [];
+
+                    for (const memberId of meeting.allowedUsers) {
+                        if (memberId.toString() !== req.user.userId) {
+                            notificationsToCreate.push({
+                                userId: memberId,
+                                type: 'new_reply',
+                                title: 'New Video Uploaded',
+                                message: `${uploader.name} posted a new update in "${meeting.title}"`,
+                                linkId: meeting._id
+                            });
+                        }
+                    }
+
+                    if (notificationsToCreate.length > 0) {
+                        await Notification.insertMany(notificationsToCreate);
+                        
+                        // We also still want to send the email to allowed users
+                        const teammates = await User.find({
+                            _id: { $in: meeting.allowedUsers, $ne: req.user.userId }
+                        });
+                        teammates.forEach(u => targetEmails.push(u.email));
+                        
                         sendNotificationEmail(targetEmails, workspace.name, meeting.title, uploader.name, summaryText);
                     }
                 }
             }
-        } catch (emailErr) {
-            console.error("Error sending notifications:", emailErr);
+        } catch (err) {
+            console.error("Error creating notifications:", err);
         }
 
         if (io) io.to(meetingId).emit('new_reply', newReply);

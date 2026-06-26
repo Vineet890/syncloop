@@ -32,15 +32,38 @@ function TeamView({ activeWorkspace }) {
             <div className="flex-[2]">
                 <div className="p-8 border bg-card text-card-foreground rounded-2xl shadow-sm">
                     <h3 className="mb-6 text-xl font-semibold tracking-tight">Workspace Members</h3>
-                    <div className="flex items-center gap-4 p-4 mb-4 border rounded-xl bg-muted/50">
-                        <div className="flex items-center justify-center w-10 h-10 font-bold rounded-full bg-primary text-primary-foreground">O</div>
-                        <div>
-                            <p className="font-semibold text-foreground">Workspace Owner</p>
-                            <p className="text-sm text-muted-foreground">Admin</p>
-                        </div>
+                    <div className="flex flex-col gap-3">
+                        {activeWorkspace.members && activeWorkspace.members.map(member => (
+                            <div key={member._id} className="flex items-center gap-4 p-4 border rounded-xl bg-muted/20">
+                                <div className="flex items-center justify-center w-10 h-10 font-bold rounded-full bg-primary/10 text-primary">
+                                    {(member.name || member.email).charAt(0).toUpperCase()}
+                                </div>
+                                <div>
+                                    <p className="font-semibold text-foreground">{member.name || member.email}</p>
+                                    <p className="text-sm text-muted-foreground">{member._id === activeWorkspace.ownerId ? 'Workspace Owner' : 'Member'}</p>
+                                </div>
+                            </div>
+                        ))}
                     </div>
-                    {/* Ideally we map over actual members here */}
-                    <p className="text-sm text-muted-foreground">More members will appear here once they accept their invites.</p>
+
+                    {activeWorkspace.pendingInvites && activeWorkspace.pendingInvites.length > 0 && (
+                        <div className="mt-8">
+                            <h3 className="mb-4 text-lg font-semibold tracking-tight text-muted-foreground">Pending Invites</h3>
+                            <div className="flex flex-col gap-3">
+                                {activeWorkspace.pendingInvites.map(invitee => (
+                                    <div key={invitee._id} className="flex items-center gap-4 p-4 border border-dashed rounded-xl opacity-70">
+                                        <div className="flex items-center justify-center w-10 h-10 font-bold rounded-full bg-muted text-muted-foreground">
+                                            {(invitee.name || invitee.email).charAt(0).toUpperCase()}
+                                        </div>
+                                        <div>
+                                            <p className="font-semibold text-foreground">{invitee.name || invitee.email}</p>
+                                            <p className="text-sm text-muted-foreground">Invited</p>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
 
