@@ -284,7 +284,7 @@ function Dashboard({ activeWorkspace }) {
           <div className="flex gap-6 text-sm text-muted-foreground">
             <p>Built by Vineet Kumar</p>
             <a href="mailto:vineet765245@gmail.com" className="transition-colors hover:text-primary">Contact Support</a>
-            <a href="https://github.com/vineet765245" target="_blank" rel="noreferrer" className="transition-colors hover:text-primary">GitHub</a>
+            <a href="https://github.com/Vineet890/silent-meeting" target="_blank" rel="noreferrer" className="transition-colors hover:text-primary">GitHub</a>
           </div>
         </div>
       </footer>

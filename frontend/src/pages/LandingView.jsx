@@ -131,7 +131,7 @@ function LandingView() {
           <div className="flex gap-6 text-sm text-muted-foreground">
             <p>Built by Vineet Kumar</p>
             <a href="mailto:vineet765245@gmail.com" className="hover:text-primary transition-colors">Contact Support</a>
-            <a href="https://github.com/vineet765245" target="_blank" rel="noreferrer" className="hover:text-primary transition-colors">GitHub</a>
+            <a href="https://github.com/Vineet890/silent-meeting" target="_blank" rel="noreferrer" className="hover:text-primary transition-colors">GitHub</a>
           </div>
         </div>
       </footer>
