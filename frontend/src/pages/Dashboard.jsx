@@ -218,15 +218,33 @@ function Dashboard({ activeWorkspace }) {
               ) : (
                   <div>
                     {activeWorkspace && user.id === activeWorkspace.ownerId && (
-                    <div className="flex flex-col mb-12">
-                      <h3 className="mb-4 text-xl font-semibold tracking-tight text-foreground">Start a New Discussion</h3>
-                      <form onSubmit={handleCreateMeeting} className="flex flex-col gap-4 w-full bg-white/40 dark:bg-black/40 p-5 rounded-xl border shadow-sm backdrop-blur-md">
-                          <input type="text" placeholder="What do you want to discuss? (e.g., Q3 Marketing Sync)" className="flex h-12 w-full rounded-lg bg-background px-4 py-2 text-base outline-none placeholder:text-muted-foreground border focus:ring-2 focus:ring-primary/20" value={newMeetingTitle} onChange={(e) => setNewMeetingTitle(e.target.value)} required />
-                          <textarea placeholder="Add a brief agenda or description..." className="flex min-h-[80px] w-full rounded-lg bg-background px-4 py-3 text-sm outline-none placeholder:text-muted-foreground border focus:ring-2 focus:ring-primary/20 resize-y" value={newMeetingAgenda} onChange={(e) => setNewMeetingAgenda(e.target.value)} required />
-                          <div className="flex justify-end mt-2">
-                              <button type="submit" className="whitespace-nowrap inline-flex items-center justify-center h-10 px-8 text-sm font-bold transition-all rounded-lg shadow-md bg-primary text-primary-foreground hover:bg-primary/90 hover:scale-105 active:scale-95">Create Thread</button>
-                          </div>
-                      </form>
+                    <div className="flex flex-col mb-12 relative group">
+                      <div className="absolute -inset-1 rounded-2xl bg-gradient-to-r from-primary/30 to-indigo-500/30 opacity-20 blur-xl transition-opacity group-hover:opacity-40"></div>
+                      <div className="relative flex flex-col bg-white/80 dark:bg-black/60 backdrop-blur-xl p-6 md:p-8 rounded-2xl border border-border/50 shadow-sm hover:shadow-md transition-all">
+                        <div className="flex items-center gap-3 mb-6">
+                            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                            </div>
+                            <div>
+                                <h3 className="text-xl font-bold tracking-tight text-foreground">Start a New Thread</h3>
+                                <p className="text-sm text-muted-foreground">Kick off an async discussion with your team</p>
+                            </div>
+                        </div>
+                        <form onSubmit={handleCreateMeeting} className="flex flex-col gap-4 w-full">
+                            <div className="relative">
+                                <input type="text" placeholder="Subject (e.g., Q3 Marketing Sync)" className="flex h-14 w-full rounded-xl bg-background/50 px-4 pt-1 pb-1 text-lg font-semibold outline-none placeholder:text-muted-foreground/60 border border-transparent hover:border-border focus:border-primary/50 focus:bg-background transition-all" value={newMeetingTitle} onChange={(e) => setNewMeetingTitle(e.target.value)} required />
+                            </div>
+                            <div className="relative">
+                                <textarea placeholder="Add an agenda, context, or key questions to answer..." className="flex min-h-[100px] w-full rounded-xl bg-background/50 px-4 py-3 text-base outline-none placeholder:text-muted-foreground/60 border border-transparent hover:border-border focus:border-primary/50 focus:bg-background transition-all resize-y" value={newMeetingAgenda} onChange={(e) => setNewMeetingAgenda(e.target.value)} required />
+                            </div>
+                            <div className="flex justify-end mt-2 border-t border-border/50 pt-4">
+                                <button type="submit" className="inline-flex items-center justify-center h-11 px-8 text-sm font-bold transition-all rounded-full shadow-md bg-primary text-primary-foreground hover:bg-primary/90 hover:scale-105 active:scale-95 group/btn">
+                                    Create Thread
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="ml-2 group-hover/btn:translate-x-1 transition-transform"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+                                </button>
+                            </div>
+                        </form>
+                      </div>
                     </div>
                     )}
 

@@ -249,7 +249,7 @@ export default function MeetingView({ isDarkMode, toggleDarkMode }) {
         </div>
 
         <div className="flex items-center justify-end flex-1 gap-4">
-            {workspace && (workspace.ownerId === user.userId || meeting?.allowedUsers?.includes(user.userId)) && (
+            {workspace && (workspace.ownerId === user.id || meeting?.allowedUsers?.includes(user.id)) && (
               <button 
                   onClick={() => setIsAccessModalOpen(true)}
                   className="hidden sm:flex items-center gap-2 px-3 py-1.5 text-sm font-medium transition-colors rounded-full bg-primary/10 text-primary hover:bg-primary/20"
@@ -427,10 +427,10 @@ export default function MeetingView({ isDarkMode, toggleDarkMode }) {
               <p className="mb-6 text-sm text-muted-foreground">Select team members to add to this discussion.</p>
               
               <div className="space-y-3 max-h-64 overflow-y-auto pr-2">
-                {workspace.members.filter(m => m._id !== user.userId).length === 0 ? (
+                {workspace.members.filter(m => m._id !== user.id).length === 0 ? (
                   <p className="text-sm text-muted-foreground">No other members in this workspace yet.</p>
                 ) : (
-                  workspace.members.filter(m => m._id !== user.userId).map(member => {
+                  workspace.members.filter(m => m._id !== user.id).map(member => {
                     const isAllowed = meeting?.allowedUsers?.includes(member._id);
                     return (
                       <div key={member._id} className="flex items-center justify-between p-3 border rounded-lg">
