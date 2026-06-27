@@ -118,8 +118,8 @@ graph TD
 
 **1. Clone the repository**
 ```bash
-git clone https://github.com/Vineet890/silent-meeting.git
-cd silent-meeting
+git clone https://github.com/Vineet890/syncloop.git
+cd syncloop
 ```
 
 **2. Configure and Start the Backend**
